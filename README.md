@@ -1,4 +1,11 @@
-# financial-assistant
+<h1>
+  <img src="logo-assets/svg/icon-rounded.svg" alt="" width="40" height="40" align="top">
+  financial-assistant
+</h1>
+
+<p align="center">
+  <img src="logo-assets/github/social-preview-1280x640.png" alt="financial-assistant: personal finance, tracked" width="100%">
+</p>
 
 A local-first personal finance tracker built from bank statement PDFs. It parses
 your statements, refuses any statement whose balances do not reconcile,
