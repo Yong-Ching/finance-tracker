@@ -1,0 +1,27 @@
+{
+  "_comment": "Copy to statements.local.json (gitignored) and fill in values read off your own statements. Amounts are integer cents. Patterns are case-insensitive regexes matched against a transaction's description.",
+  "dbs": {
+    "sample": "DBS-Statement-Jan.pdf",
+    "expected": {
+      "DBS-Statement-Jan.pdf": { "n": 40, "open": 1000000, "close": 950000 }
+    },
+    "creditPattern": "GIRO SALARY",
+    "debitPattern": "LANDLORD NAME",
+    "continuationPattern": "TO: LANDLORD NAME"
+  },
+  "citibank": {
+    "sample": "eStatement_Jan2026.pdf",
+    "statementDate": "2026-01-15",
+    "chain": [["eStatement_Jan2026.pdf", -50000, -40000]],
+    "payment": { "pattern": "PAYMENT", "cents": 50000 },
+    "purchase": { "pattern": "SOME MERCHANT", "cents": -500 },
+    "fx": { "pattern": "SOME HOTEL", "currency": "MYR", "originalCents": 10000, "cents": -3000 }
+  },
+  "youtrip": {
+    "sample": "YouTrip_SGD-Statement_1-Jul-2026_to_31-Jul-2026.pdf",
+    "merchantAbove": { "pattern": "SOME MERCHANT", "date": "2026-07-31", "cents": -1000 },
+    "topUpCents": 20000,
+    "fx": { "currency": "MYR", "cents": -3000, "originalCents": 10000 },
+    "otherCurrency": "IDR"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "name": "finance-desktop",
+  "productName": "Finance",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Desktop shell for the finance/ dashboard",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "package": "node scripts/bake-path.js && electron-builder --mac --dir",
+    "install-app": "npm run package && sh scripts/install.sh"
+  },
+  "build": {
+    "appId": "local.finance.dashboard",
+    "productName": "Finance",
+    "files": [
+      "main.js",
+      "server.js",
+      "splash.html",
+      "project-path.json",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "target": "dir",
+      "icon": "build/icon.png",
+      "category": "public.app-category.finance",
+      "identity": null
+    }
+  },
+  "devDependencies": {
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3"
+  }
+}

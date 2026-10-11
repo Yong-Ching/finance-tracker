@@ -1,0 +1,124 @@
+@import "tailwindcss";
+
+/*
+  The interface is monochrome; colour belongs to data only. Emphasis reads
+  through weight, rules and inversion - never hue. The only saturated colours on
+  screen are chart series and the three status tokens.
+*/
+
+:root {
+  color-scheme: light;
+
+  --surface-0: #f7f7f5;   /* page */
+  --surface-1: #fcfcfb;   /* cards, chart surface */
+  --surface-2: #f0efec;   /* wells, hover */
+  --border:    #e2e1dc;
+  --border-strong: #c9c8c1;
+
+  --text-primary:   #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted:     #86857e;
+
+  /* categorical slots - fixed order, never cycled */
+  --series-1: #2a78d6;  /* blue    - income */
+  --series-2: #eb6834;  /* orange  - expenses */
+  --series-3: #1baf7a;  /* aqua    - savings */
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+
+  --status-warning: #eda100;
+  --status-critical: #e34948;
+
+  --grid: #e8e7e3;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface-0: #131312;
+    --surface-1: #1a1a19;
+    --surface-2: #242422;
+    --border:    #33332f;
+    --border-strong: #4a4a45;
+
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #8a897f;
+
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
+
+    --status-warning: #c98500;
+    --status-critical: #e66767;
+
+    --grid: #2c2c29;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-0: #131312;
+  --surface-1: #1a1a19;
+  --surface-2: #242422;
+  --border:    #33332f;
+  --border-strong: #4a4a45;
+  --text-primary:   #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted:     #8a897f;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --status-warning: #c98500;
+  --status-critical: #e66767;
+  --grid: #2c2c29;
+}
+
+@theme inline {
+  --color-surface-0: var(--surface-0);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-ink: var(--text-primary);
+  --color-ink-2: var(--text-secondary);
+  --color-ink-3: var(--text-muted);
+}
+
+body {
+  background: var(--surface-0);
+  color: var(--text-primary);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Tabular figures wherever numbers are compared down a column. */
+.tnum { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+
+.card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+/* Hatching marks money that left but cannot be itemised. */
+.hatch {
+  background-image: repeating-linear-gradient(
+    45deg, transparent, transparent 3px,
+    color-mix(in srgb, var(--text-muted) 45%, transparent) 3px,
+    color-mix(in srgb, var(--text-muted) 45%, transparent) 4px
+  );
+}
+
+input, select, textarea, button { font: inherit; }
+input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 1px;
+}

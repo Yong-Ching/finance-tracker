@@ -1,0 +1,1 @@
+ALTER TABLE `categories` ADD `pocket_account_id` integer;

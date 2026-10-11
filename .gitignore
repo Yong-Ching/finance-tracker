@@ -1,0 +1,15 @@
+# This folder also holds personal finances (data/, sessions/, the root CLAUDE.md,
+# the legacy Python tools and their output). Publishing is allowlist-only: nothing
+# is tracked unless it is listed here, so a new personal file is safe by default.
+/*
+!/.gitignore
+!/README.md
+!/.githooks/
+!/finance/
+!/desktop/
+
+.DS_Store
+*.pdf
+*.db
+*.db-*
+*.csv

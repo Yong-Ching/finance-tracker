@@ -1,0 +1,68 @@
+#!/bin/sh
+# Refuses a commit that would publish personal financial data.
+#
+# Enable once per clone:   git config core.hooksPath .githooks
+#
+# What it checks, in every staged file:
+#   1. file types that are always data: PDFs, databases, env files, *.local.json
+#   2. formats of real identifiers: SG bank account numbers, NRIC/FIN numbers
+#   3. private strings listed one per line in .private-patterns (gitignored),
+#      plus the names in FINANCE_OWNER_NAMES from finance/.env.local
+#
+# The patterns themselves never enter the repo. A false positive can be pushed
+# past with `git commit --no-verify`, after reading what it flagged.
+
+root=$(git rev-parse --show-toplevel)
+fail=0
+flag() { echo "  $1"; fail=1; }
+
+patterns=$(mktemp)
+trap 'rm -f "$patterns"' EXIT
+[ -f "$root/.private-patterns" ] && grep -v '^[[:space:]]*\(#\|$\)' "$root/.private-patterns" >>"$patterns"
+if [ -f "$root/finance/.env.local" ]; then
+  grep '^FINANCE_OWNER_NAMES=' "$root/finance/.env.local" | cut -d= -f2- | tr ',' '\n' |
+    sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' >>"$patterns"
+fi
+
+files=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -z "$files" ] && exit 0
+
+echo "$files" | while IFS= read -r f; do
+  case "$f" in
+    *.pdf|*.PDF|*.db|*.db-*|*.sqlite|*.local.json|*/data/*|data/*)
+      echo "  $f: personal data file type" ;;
+    *.env|*/.env|*.env.*|*/.env.*)
+      case "$f" in *.env.example) ;; *) echo "  $f: env file" ;; esac ;;
+  esac
+done >"$patterns.out"
+[ -s "$patterns.out" ] && { cat "$patterns.out"; fail=1; }
+rm -f "$patterns.out"
+
+for f in $files; do
+  case "$f" in *package-lock.json|*/drizzle/meta/*) continue ;; esac
+  content=$(git show ":$f" 2>/dev/null) || continue
+  # Skip binaries.
+  { printf '%s' "$content"; } 2>/dev/null | grep -qI . || continue
+
+  # Account numbers (123-456789-0) and NRIC/FIN (S1234567D); the documented
+  # synthetic examples are allowed.
+  printf '%s\n' "$content" | grep -nE '\b[0-9]{3}-[0-9]{6}-[0-9]\b|\b[STFGM][0-9]{7}[A-Z]\b' |
+    grep -vE '123-456789-0|T0000000A' | while IFS= read -r line; do
+      echo "  $f:${line%%:*}: looks like an account or NRIC/FIN number"
+    done >"$patterns.hit"
+  if [ -s "$patterns" ]; then
+    printf '%s\n' "$content" | grep -niF -f "$patterns" | while IFS= read -r line; do
+      echo "  $f:${line%%:*}: matches a private pattern"
+    done >>"$patterns.hit"
+  fi
+  [ -s "$patterns.hit" ] && { cat "$patterns.hit"; fail=1; }
+  rm -f "$patterns.hit"
+done
+
+if [ "$fail" -ne 0 ]; then
+  echo
+  echo "pre-commit: blocked - the lines above may be personal data (this repo is public)."
+  echo "Replace real values with synthetic ones; real test expectations belong in"
+  echo "finance/tests/fixtures/statements.local.json."
+  exit 1
+fi

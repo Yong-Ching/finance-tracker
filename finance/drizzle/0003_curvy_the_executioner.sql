@@ -1,0 +1,1 @@
+ALTER TABLE `ai_reviews` ADD `sha256` text NOT NULL;

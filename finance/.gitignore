@@ -1,0 +1,16 @@
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# Financial data never leaves this machine and never enters version control:
+# the database, its backups, stored statements and legacy imports all live here.
+/data/
+
+# Real-statement test expectations (see tests/fixtures/statements.example.json).
+tests/fixtures/*.local.json
+
+# Local env: holds an API key and the owner's name
+.env*
+!.env.example
