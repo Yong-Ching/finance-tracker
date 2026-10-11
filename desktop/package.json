@@ -7,7 +7,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "package": "node scripts/bake-path.js && electron-builder --mac --dir",
+    "package": "node scripts/bake-path.js && sh scripts/make-icon.sh && electron-builder --mac --dir",
     "install-app": "npm run package && sh scripts/install.sh"
   },
   "build": {
@@ -25,7 +25,7 @@
     },
     "mac": {
       "target": "dir",
-      "icon": "build/icon.png",
+      "icon": "build/icon.icns",
       "category": "public.app-category.finance",
       "identity": null
     }

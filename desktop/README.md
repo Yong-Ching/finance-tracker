@@ -45,7 +45,7 @@ move the repo), and the Chromium dev tools.
     server.js         find node -> migrate -> build if stale -> start/stop Next
     splash.html       the loading/error screen shown while the server starts
     scripts/          bake-path.js (records finance/ location), install.sh,
-                      icon.html (source of build/icon.png)
+                      make-icon.sh (builds the .icns from ../logo-assets)
 
 Settings and the server log live in `~/Library/Application Support/Finance/`.
 Deleting `settings.json` forces a fresh build and migration check on next launch.
@@ -55,15 +55,10 @@ Deleting `settings.json` forces a fresh build and migration check on next launch
     npm start               # run the shell from source, without packaging
     npm run install-app     # package, copy to ~/Applications, link on Desktop
 
-The icon's source is `build/icon.svg`; `scripts/icon.html` places it on the macOS
-icon grid (824px tile in a 1024px canvas, with a soft shadow). After editing the
-SVG, regenerate `build/icon.png` and repackage:
+The logo lives in `../logo-assets/` (all platforms). Packaging builds
+`build/icon.icns` from `logo-assets/macos/AppIcon.iconset` (`scripts/make-icon.sh`),
+so to change the app icon, replace that iconset and run `npm run install-app`.
 
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless \
-      --disable-gpu --hide-scrollbars --default-background-color=00000000 \
-      --allow-file-access-from-files --window-size=1024,1024 \
-      --screenshot=build/icon.png "file://$PWD/scripts/icon.html"
-    npm run install-app
-
-The web app uses the same logo: `finance/src/app/icon.svg` (browser tab) and
-`finance/src/app/apple-icon.png` (iOS home screen).
+The web app uses the same logo, copied from `logo-assets/web/`:
+`favicon.ico`, `favicon.svg` (as `finance/src/app/icon.svg`) and
+`apple-touch-icon.png` (as `finance/src/app/apple-icon.png`).
