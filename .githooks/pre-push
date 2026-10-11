@@ -1,0 +1,3 @@
+#!/bin/sh
+# Privacy review of everything a push would publish. See review-push.sh.
+exec "$(git rev-parse --show-toplevel)/.githooks/review-push.sh" pre-push

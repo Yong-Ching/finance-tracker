@@ -205,6 +205,26 @@ This repo is public, and the folder it lives in may also hold real finances.
   NRIC numbers, and anything you list (one per line) in a `.private-patterns`
   file at the repo root, such as your name, account numbers and payees. That
   file is never committed.
+- Every push is reviewed before anything leaves the machine
+  (`.githooks/review-push.sh`, run by the `pre-push` hook above):
+  1. Local checks: personal file types, account/NRIC formats, your
+     `.private-patterns`, and non-noreply commit emails. These never leave
+     the machine.
+  2. A clean Claude reviewer: a separate `claude -p`, started in an empty temp
+     folder with every tool disabled, reads only the outgoing diff and commit
+     messages and blocks anything that looks like real personal or financial
+     data. If it can't run, the push is refused.
+
+  This needs the [Claude Code](https://claude.com/claude-code) CLI signed in.
+  To have Claude Code's own pushes reviewed the same way, add this to
+  `.claude/settings.json`:
+
+  ```json
+  { "hooks": { "PreToolUse": [ { "matcher": "Bash", "hooks": [ {
+    "type": "command", "timeout": 300,
+    "command": "\"$CLAUDE_PROJECT_DIR\"/.githooks/review-push.sh claude"
+  } ] } ] } }
+  ```
 - Tests use made-up data. Parser tests against real PDFs read their expected
   values from `finance/tests/fixtures/statements.local.json` (gitignored);
   `statements.example.json` shows the format.
