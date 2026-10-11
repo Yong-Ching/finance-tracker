@@ -88,7 +88,7 @@ function createWindow() {
     ...b,
     minWidth: 480,
     minHeight: 400,
-    title: "Finance",
+    title: "finance-tracker",
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#0b0b0b" : "#ffffff",
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
@@ -154,7 +154,7 @@ async function onStartFailure(err) {
   const buttons = inDev ? ["Retry", "Show Log File", "Quit"] : ["Retry", "Open in Live-Reload Mode", "Quit"];
   const { response } = await dialog.showMessageBox(win, {
     type: "error",
-    message: "Finance could not start",
+    message: "finance-tracker could not start",
     detail: `${err.message}\n\nThe output is shown in the window behind this message.`,
     buttons,
     defaultId: 0,

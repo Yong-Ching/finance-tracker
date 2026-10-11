@@ -1,6 +1,6 @@
 {
   "name": "finance-desktop",
-  "productName": "Finance",
+  "productName": "finance-tracker",
   "version": "1.0.0",
   "private": true,
   "description": "Desktop shell for the finance/ dashboard",
@@ -12,7 +12,7 @@
   },
   "build": {
     "appId": "local.finance.dashboard",
-    "productName": "Finance",
+    "productName": "finance-tracker",
     "files": [
       "main.js",
       "server.js",

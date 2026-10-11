@@ -5,7 +5,7 @@ Runs locally; nothing is uploaded anywhere.
 
     npm run dev        # http://127.0.0.1:3000
 
-Or double-click **Finance** on the Desktop: `../desktop` wraps this app in
+Or double-click **finance-tracker** on the Desktop: `../desktop` wraps this app in
 Electron and rebuilds it on launch whenever something here has changed. See
 `../desktop/README.md`.
 

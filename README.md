@@ -87,7 +87,7 @@ npm install
 npm run install-app
 ```
 
-This puts **Finance** in `~/Applications` and a shortcut on your Desktop. It runs
+This puts **finance-tracker** in `~/Applications` and a shortcut on your Desktop. It runs
 your copy of `finance/` directly: when you change the code, the next launch
 rebuilds by itself. Details are in [desktop/README.md](desktop/README.md).
 

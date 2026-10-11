@@ -1,6 +1,6 @@
-# Finance desktop app
+# finance-tracker desktop app
 
-A thin Electron shell around `../finance`. Double-click **Finance** on the
+A thin Electron shell around `../finance`. Double-click **finance-tracker** on the
 Desktop (or in `~/Applications`) and it opens the dashboard in its own window.
 
 ## How it works
@@ -47,7 +47,7 @@ move the repo), and the Chromium dev tools.
     scripts/          bake-path.js (records finance/ location), install.sh,
                       make-icon.sh (builds the .icns from ../logo-assets)
 
-Settings and the server log live in `~/Library/Application Support/Finance/`.
+Settings and the server log live in `~/Library/Application Support/finance-tracker/`.
 Deleting `settings.json` forces a fresh build and migration check on next launch.
 
 ## Commands
