@@ -1,10 +1,10 @@
 <h1>
   <img src="logo-assets/svg/icon-rounded.svg" alt="" width="40" height="40" align="top">
-  financial-assistant
+  finance-tracker
 </h1>
 
 <p align="center">
-  <img src="logo-assets/github/social-preview-1280x640.png" alt="financial-assistant: personal finance, tracked" width="100%">
+  <img src="logo-assets/github/social-preview-1280x640.png" alt="finance-tracker: personal finance, tracked" width="100%">
 </p>
 
 A local-first personal finance tracker built from bank statement PDFs. It parses
@@ -38,8 +38,8 @@ desktop/    optional macOS app that opens it with a double-click
 ### 2. Get the code
 
 ```sh
-git clone https://github.com/Yong-Ching/financial-assistant.git
-cd financial-assistant/finance
+git clone https://github.com/Yong-Ching/finance-tracker.git
+cd finance-tracker/finance
 ```
 
 ### 3. Install dependencies
