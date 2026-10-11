@@ -1,8 +1,15 @@
 /**
  * Seeds accounts, categories and classification rules.
  *
- * Rules are carried over verbatim from the legacy ../data/labels.json, with two
- * deliberate exceptions (see docs in import-legacy.ts):
+ * Two modes, picked by whether ../data/labels.json exists:
+ *
+ * Fresh install (no labels.json): accounts, a starter set of categories and the
+ * built-in transfer rules. Safe to re-run - it only adds what is missing and
+ * never deletes. Payee rules are then added from the Transactions page.
+ *
+ * Legacy migration (labels.json present): rules are carried over verbatim from
+ * the old Python tool, REPLACING all rules and overrides, with two deliberate
+ * exceptions (see docs in import-legacy.ts):
  *   - the food_keywords and small_personal_max heuristics are NOT imported;
  *     they guess a category, which the brief forbids.
  *   - the YouTrip / Citibank payee rules become internal_transfer, not spending.
@@ -48,6 +55,22 @@ const ACCOUNTS = [
   { name: "Citibank", institution: "Citibank", kind: "credit_card" as const, isPocket: true, sortOrder: 4 },
 ];
 
+/** Categories for a fresh install; personal ones are added from the app. */
+const STARTER_CATEGORIES: Array<[string, Bucket]> = [
+  ["Salary", "income"],
+  ["Bank interest", "income"],
+  ["Rent", "expense"],
+  ["Food & groceries", "expense"],
+  ["Transport", "expense"],
+  ["Mobile", "expense"],
+  ["Online shopping", "expense"],
+  ["Personal care", "expense"],
+  ["Income tax (IRAS)", "expense"],
+  ["Investments", "savings"],
+  ["YouTrip top-up", "transfer"],
+  ["Citibank credit card", "transfer"],
+];
+
 /** Categories present in the legacy data that no rule creates. */
 const EXTRA_CATEGORIES: Array<[string, Bucket]> = [
   ["Money in: other", "income"],
@@ -63,7 +86,8 @@ const EXTRA_CATEGORIES: Array<[string, Bucket]> = [
 
 function main() {
   const { db, conn } = openDb();
-  const labels = JSON.parse(fs.readFileSync(LEGACY, "utf8"));
+  const labels = fs.existsSync(LEGACY) ? JSON.parse(fs.readFileSync(LEGACY, "utf8")) : null;
+  console.log(labels ? `legacy migration from ${LEGACY}` : "fresh install (no legacy labels.json)");
 
   // --- accounts -----------------------------------------------------------
   for (const a of ACCOUNTS) {
@@ -79,9 +103,13 @@ function main() {
     const bucket = POCKET_CATEGORIES.has(cat) ? "transfer" : TYPE_TO_BUCKET[KIND_TO_TYPE[kind]];
     wanted.set(cat, bucket);
   };
-  for (const r of labels.rules) remember(r.cat, r.kind);
-  for (const o of Object.values<any>(labels.one_offs)) remember(o.cat, o.kind);
-  remember(labels.rent.cat, labels.rent.kind);
+  if (labels) {
+    for (const r of labels.rules) remember(r.cat, r.kind);
+    for (const o of Object.values<any>(labels.one_offs)) remember(o.cat, o.kind);
+    remember(labels.rent.cat, labels.rent.kind);
+  } else {
+    for (const [name, bucket] of STARTER_CATEGORIES) wanted.set(name, bucket);
+  }
   for (const [name, bucket] of EXTRA_CATEGORIES) if (!wanted.has(name)) wanted.set(name, bucket);
 
   for (const [name, bucket] of wanted) {
@@ -108,46 +136,52 @@ function main() {
   );
 
   // --- rules --------------------------------------------------------------
-  db.delete(schema.rules).run();
+  // A migration replaces every rule. A fresh install seeds the built-in rules
+  // only into an empty table, so re-running never duplicates them or touches
+  // rules added in the app.
+  const seedRules = labels ? true : db.select().from(schema.rules).all().length === 0;
+  if (labels) db.delete(schema.rules).run();
   let priority = 10;
 
-  // Rent first: it is matched by amount + day-of-month because the payee name
-  // changed in July, so it must beat any payee-name rule.
-  db.insert(schema.rules)
-    .values({
-      pattern: `amount=${labels.rent.amount} day<=${labels.rent.day_max}`,
-      matchType: "amountAndDay",
-      categoryId: catByName.get(labels.rent.cat)!,
-      txnType: KIND_TO_TYPE[labels.rent.kind as LegacyKind],
-      amountCents: -Math.abs(fromFloat(labels.rent.amount)),
-      dayMax: labels.rent.day_max,
-      priority: priority++,
-      accountId: accountByName.get("DBS")!,
-      note: "Rent: payee name changed in July, so match on amount and timing.",
-    })
-    .run();
-
-  for (const r of labels.rules) {
-    const isPocket = POCKET_CATEGORIES.has(r.cat);
+  if (labels) {
+    // Rent first: it is matched by amount + day-of-month because the payee name
+    // changed in July, so it must beat any payee-name rule.
     db.insert(schema.rules)
       .values({
-        pattern: r.match,
-        matchType: "substring",
-        categoryId: catByName.get(r.cat)!,
-        // A pocket top-up is a transfer between the user's own accounts, never
-        // spending in itself. Its contents arrive with the pocket's statement.
-        txnType: isPocket ? "internal_transfer" : KIND_TO_TYPE[r.kind as LegacyKind],
-        seen: r.seen ?? true,
+        pattern: `amount=${labels.rent.amount} day<=${labels.rent.day_max}`,
+        matchType: "amountAndDay",
+        categoryId: catByName.get(labels.rent.cat)!,
+        txnType: KIND_TO_TYPE[labels.rent.kind as LegacyKind],
+        amountCents: -Math.abs(fromFloat(labels.rent.amount)),
+        dayMax: labels.rent.day_max,
         priority: priority++,
-        note: r._note ?? null,
+        accountId: accountByName.get("DBS")!,
+        note: "Rent: payee name changed in July, so match on amount and timing.",
       })
       .run();
+
+    for (const r of labels.rules) {
+      const isPocket = POCKET_CATEGORIES.has(r.cat);
+      db.insert(schema.rules)
+        .values({
+          pattern: r.match,
+          matchType: "substring",
+          categoryId: catByName.get(r.cat)!,
+          // A pocket top-up is a transfer between the user's own accounts, never
+          // spending in itself. Its contents arrive with the pocket's statement.
+          txnType: isPocket ? "internal_transfer" : KIND_TO_TYPE[r.kind as LegacyKind],
+          seen: r.seen ?? true,
+          priority: priority++,
+          note: r._note ?? null,
+        })
+        .run();
+    }
   }
 
   // A payment arriving on the card is the other half of a DBS transfer, not
   // income. Scoped to the Citibank account so it cannot catch anything else.
   const citiId = accountByName.get("Citibank");
-  if (citiId) {
+  if (seedRules && citiId) {
     // Its own category, with no pocketAccountId: this is the arriving half of a
     // transfer, never the departing half that funds a pocket. Shared by the
     // card bill payment and the wallet top-up.
@@ -181,7 +215,7 @@ function main() {
     .from(schema.categories)
     .where(eq(schema.categories.name, "Transfer received"))
     .get();
-  if (ytId && received2) {
+  if (seedRules && ytId && received2) {
     db.insert(schema.rules)
       .values({
         pattern: "Top up",
@@ -199,7 +233,7 @@ function main() {
   // Insurance. Only one payee appears in the data so far; add others as they
   // show up rather than seeding rules that never match.
   const insuranceId = catByName.get("Insurance");
-  if (insuranceId) {
+  if (seedRules && insuranceId) {
     db.insert(schema.rules)
       .values({
         pattern: "INCOME INSURANCE",
@@ -215,7 +249,7 @@ function main() {
   // Entertainment. Only one unambiguous payee appears so far; streaming and
   // cinema rules can be added when they show up rather than seeded blind.
   const entertainmentId = catByName.get("Entertainment");
-  if (entertainmentId) {
+  if (seedRules && entertainmentId) {
     db.insert(schema.rules)
       .values({
         pattern: "TICKETMASTER",
@@ -231,7 +265,7 @@ function main() {
   // Recurring digital services. Kept apart from Online shopping so a small
   // automatic charge does not vanish among one-off purchases.
   const subsId = catByName.get("Subscriptions");
-  if (subsId) {
+  if (seedRules && subsId) {
     db.insert(schema.rules)
       .values({
         pattern: "APPLE.COM/BILL",
@@ -245,12 +279,14 @@ function main() {
       .run();
   }
 
-  // --- one-offs become overrides -----------------------------------------
-  db.delete(schema.overrides).run();
-  const oneOffs = Object.entries<any>(labels.one_offs).map(([key, v]) => {
-    const [date, amount] = key.split("|");
-    return { date, amount: Number(amount), ...v };
-  });
+  // --- one-offs become overrides (migration only) ------------------------
+  const oneOffs = labels
+    ? Object.entries<any>(labels.one_offs).map(([key, v]) => {
+        const [date, amount] = key.split("|");
+        return { date, amount: Number(amount), ...v };
+      })
+    : [];
+  if (labels) db.delete(schema.overrides).run();
 
   const counts = {
     accounts: accountByName.size,
@@ -260,10 +296,12 @@ function main() {
   };
   // one-offs are resolved to dedupe hashes by import-legacy, which knows the
   // full description text; write them to a staging file it can read.
-  fs.writeFileSync(
-    path.join(process.cwd(), "data", "legacy-one-offs.json"),
-    JSON.stringify(oneOffs, null, 2),
-  );
+  if (labels) {
+    fs.writeFileSync(
+      path.join(process.cwd(), "data", "legacy-one-offs.json"),
+      JSON.stringify(oneOffs, null, 2),
+    );
+  }
 
   conn.close();
   console.log("seeded:", counts);
