@@ -1,11 +1,10 @@
-<!doctype html><html><head><style>
-  html,body{margin:0;width:1024px;height:1024px;background:transparent}
-  .tile{position:absolute;left:100px;top:100px;width:824px;height:824px;border-radius:185px;
-    background:linear-gradient(#1c1c1c,#0a0a0a);box-shadow:0 10px 30px rgba(0,0,0,.35);overflow:hidden}
-  .bars{position:absolute;left:170px;right:170px;bottom:210px;height:400px;display:flex;align-items:flex-end;gap:44px}
-  .bars div{flex:1;background:#f2f2f2;border-radius:10px 10px 0 0}
-  .base{position:absolute;left:150px;right:150px;bottom:190px;height:10px;background:#f2f2f2;border-radius:5px}
-</style></head><body><div class="tile">
-  <div class="bars"><div style="height:38%"></div><div style="height:62%"></div><div style="height:48%"></div><div style="height:100%"></div></div>
-  <div class="base"></div>
-</div></body></html>
+<!doctype html>
+<!-- Renders build/icon.svg onto the macOS icon grid: the tile is 824px inside a
+     1024px transparent canvas, with the soft drop shadow macOS icons carry.
+     Regenerate build/icon.png with the command in desktop/README.md. -->
+<html><head><style>
+  html, body { margin: 0; width: 1024px; height: 1024px; background: transparent; }
+  img { position: absolute; left: 100px; top: 100px; width: 824px; height: 824px;
+        filter: drop-shadow(0 10px 14px rgba(0, 0, 0, .28)); }
+</style></head>
+<body><img src="../build/icon.svg" alt=""></body></html>
