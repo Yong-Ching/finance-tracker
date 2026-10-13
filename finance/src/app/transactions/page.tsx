@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { formatCents } from "@/lib/money";
+import { parseAmountQuery } from "@/lib/amount-query";
 import {
   listTransactions, allCategories, allAccounts, suggestionsByTxnId, flagsByTxnId, getSubscription,
 } from "@/lib/queries";
@@ -27,12 +28,14 @@ export default async function TransactionsPage({
     to: sp.to || undefined,
     reviewOnly: sp.review === "1",
     subscriptionId: positiveInt(sp.subscription),
+    amount: sp.amount?.trim() || undefined,
     page,
     perPage: PER_PAGE,
   };
 
   const { rows, total, sumCents } = listTransactions(filters);
   const subscription = filters.subscriptionId ? getSubscription(filters.subscriptionId) : null;
+  const badAmount = filters.amount !== undefined && parseAmountQuery(filters.amount) === null;
   const categories = allCategories();
   const accounts = allAccounts();
 
@@ -97,7 +100,18 @@ export default async function TransactionsPage({
           Search
           <input
             name="q" defaultValue={sp.q ?? ""} placeholder="Description contains..."
-            className="w-56 rounded border border-[var(--border)] bg-[var(--surface-1)] px-2 py-1 text-[13px] normal-case tracking-normal text-[var(--text-primary)]"
+            className="w-48 rounded border border-[var(--border)] bg-[var(--surface-1)] px-2 py-1 text-[13px] normal-case tracking-normal text-[var(--text-primary)]"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
+          Amount
+          <input
+            name="amount" defaultValue={sp.amount ?? ""} placeholder="e.g. 10-50"
+            title={"3.98 exact - 10-50 range - >100 or <5 - ~30 within 10%\nStart with - for money out only, + for money in only"}
+            aria-invalid={badAmount || undefined}
+            className={`tnum w-28 rounded border bg-[var(--surface-1)] px-2 py-1 text-[13px] normal-case tracking-normal text-[var(--text-primary)] ${
+              badAmount ? "border-[var(--status-warning)]" : "border-[var(--border)]"
+            }`}
           />
         </label>
         <Select name="account" label="Account" value={sp.account} options={accounts.map((a) => [String(a.id), a.name] as [string, string])} />
@@ -154,10 +168,17 @@ export default async function TransactionsPage({
             to: filters.to,
             reviewOnly: filters.reviewOnly,
             subscriptionId: filters.subscriptionId,
+            amount: filters.amount,
           }}
         />
       ) : (
-        <Card><Empty>No transactions match these filters.</Empty></Card>
+        <Card>
+          <Empty>
+            {badAmount
+              ? `"${filters.amount}" is not an amount. Try 3.98, 10-50, >100, <5 or ~30 (start with - for money out only).`
+              : "No transactions match these filters."}
+          </Empty>
+        </Card>
       )}
 
       {pages > 1 && (

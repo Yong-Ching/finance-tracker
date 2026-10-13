@@ -118,6 +118,10 @@ quietly wrong. Uploading the same file twice does nothing.
 3. A manual choice always beats a rule, and survives deleting and re-importing
    the statement.
 
+To find a transaction by how much it was, use **Amount** in the filters: `3.98`
+(exact), `10-50` (a range), `>100` or `<5`, `~30` (within 10%). Start with `-`
+for money out only or `+` for money in only, e.g. `-~30`.
+
 ### 3. Write rules for payees that recur
 
 1. Go to **Rules**. Enter a text the description contains (for example

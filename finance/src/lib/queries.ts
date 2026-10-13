@@ -3,6 +3,7 @@ import { and, asc, desc, eq, gte, inArray, isNull, lte, ne, sql, like, or } from
 import { db } from "@/db/client";
 import * as s from "@/db/schema";
 import type { Period } from "./period";
+import { parseAmountQuery } from "./amount-query";
 import {
   assess, detectCandidates, matches, monthlyCents, timeline,
   type Candidate, type ChargeRow, type SubscriptionState, type TimelineEntry,
@@ -299,6 +300,8 @@ export interface TxnFilters {
   reviewOnly?: boolean;
   /** Exactly the charges matched to one subscription (amount tolerance included). */
   subscriptionId?: number;
+  /** An amount expression ("3.98", "10-50", ">100", "~30", "-3.98"); see amount-query.ts. */
+  amount?: string;
   page?: number;
   perPage?: number;
 }
@@ -323,6 +326,23 @@ export interface TxnRow {
 /** An id list as a condition; an empty list matches nothing rather than everything. */
 const idsIn = (ids: number[]) => (ids.length ? inArray(s.transactions.id, ids) : sql`0`);
 
+/**
+ * Conditions for an amount expression. One that cannot be read matches
+ * nothing, so a typo shows an empty list instead of silently showing all.
+ */
+function amountClauses(raw: string | undefined) {
+  if (!raw?.trim()) return [];
+  const q = parseAmountQuery(raw);
+  if (!q) return [sql`0`];
+  const abs = sql`abs(${s.transactions.amountCents})`;
+  return [
+    q.minCents !== undefined ? sql`${abs} >= ${q.minCents}` : undefined,
+    q.maxCents !== undefined ? sql`${abs} <= ${q.maxCents}` : undefined,
+    q.direction === "out" ? sql`${s.transactions.amountCents} < 0` : undefined,
+    q.direction === "in" ? sql`${s.transactions.amountCents} > 0` : undefined,
+  ];
+}
+
 function txnWhere(f: TxnFilters) {
   const clauses = [
     f.q ? like(sql`upper(${s.transactions.descriptionRaw})`, `%${f.q.toUpperCase()}%`) : undefined,
@@ -341,6 +361,7 @@ function txnWhere(f: TxnFilters) {
     f.to ? lte(s.transactions.txnDate, f.to) : undefined,
     f.reviewOnly ? eq(s.transactions.isReviewed, false) : undefined,
     f.subscriptionId !== undefined ? idsIn(subscriptionChargeIds(f.subscriptionId)) : undefined,
+    ...amountClauses(f.amount),
   ].filter(Boolean);
   return clauses.length ? and(...clauses) : undefined;
 }
