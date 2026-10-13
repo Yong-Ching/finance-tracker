@@ -3,6 +3,10 @@ import { and, asc, desc, eq, gte, inArray, isNull, lte, ne, sql, like, or } from
 import { db } from "@/db/client";
 import * as s from "@/db/schema";
 import type { Period } from "./period";
+import {
+  assess, detectCandidates, monthlyCents,
+  type Candidate, type ChargeRow, type SubscriptionState,
+} from "./subscriptions";
 
 /** txnTypes that count toward the dashboard's three buckets. */
 const REPORTING = ["income", "expense", "savings", "debt_repayment"] as const;
@@ -569,4 +573,96 @@ export function matchingTransactionIds(f: TxnFilters): number[] {
     .where(txnWhere(f))
     .all()
     .map((r) => r.id);
+}
+
+/* ---------------------------------------------------------- subscriptions */
+
+
+export interface SubscriptionRow extends s.Subscription, SubscriptionState {
+  accountName: string | null;
+  monthlyCents: number;
+  /** End of the latest statement the charges are judged against. */
+  asOf: string | null;
+}
+
+export interface SubscriptionOverview {
+  active: SubscriptionRow[];
+  cancelled: SubscriptionRow[];
+  candidates: (Candidate & { accountName: string })[];
+  monthlyTotalCents: number;
+  needsAttention: number;
+}
+
+/** Outflows from imported statements - the only rows a subscription can match. */
+function outflows(): ChargeRow[] {
+  return db
+    .select({
+      id: s.transactions.id,
+      accountId: s.transactions.accountId,
+      txnDate: s.transactions.txnDate,
+      amountCents: s.transactions.amountCents,
+      descriptionRaw: s.transactions.descriptionRaw,
+      categoryName: s.categories.name,
+    })
+    .from(s.transactions)
+    .leftJoin(s.categories, eq(s.categories.id, s.transactions.categoryId))
+    .where(
+      and(
+        sql`${s.transactions.amountCents} < 0`,
+        // A transfer to a pocket is not a charge; what it bought is, on the pocket's statement.
+        ne(s.transactions.txnType, "internal_transfer"),
+        sql`(${s.transactions.statementId} is null or ${s.transactions.statementId} in
+             (select id from statements where status = 'imported'))`,
+      ),
+    )
+    .all();
+}
+
+/** Each account's latest statement end: how far the data can see. */
+function statementEnds(): Map<number, string> {
+  const rows = db
+    .select({ accountId: s.statements.accountId, end: sql<string>`max(${s.statements.periodTo})` })
+    .from(s.statements)
+    .where(eq(s.statements.status, "imported"))
+    .groupBy(s.statements.accountId)
+    .all();
+  return new Map(rows.filter((r) => r.end).map((r) => [r.accountId, r.end]));
+}
+
+export function subscriptionOverview(): SubscriptionOverview {
+  const charges = outflows();
+  const ends = statementEnds();
+  const accountName = new Map(allAccounts().map((a) => [a.id, a.name]));
+  const subs = db.select().from(s.subscriptions).orderBy(asc(s.subscriptions.name)).all();
+
+  const rows: SubscriptionRow[] = subs
+    .filter((x) => x.status !== "dismissed")
+    .map((x) => {
+      const state = assess(x, charges, null);
+      // Judge against the account the charges actually come from.
+      const acct = x.accountId ?? state.lastCharge?.accountId ?? null;
+      const asOf = acct !== null ? ends.get(acct) ?? null : null;
+      return {
+        ...x,
+        ...assess(x, charges, asOf),
+        asOf,
+        accountName: x.accountId !== null ? accountName.get(x.accountId) ?? null : null,
+        monthlyCents: monthlyCents(x.amountCents, x.cadence),
+      };
+    });
+
+  const active = rows
+    .filter((r) => r.status === "active")
+    .sort((a, b) => b.monthlyCents - a.monthlyCents);
+
+  return {
+    active,
+    cancelled: rows.filter((r) => r.status === "cancelled"),
+    candidates: detectCandidates(charges, subs, ends).map((c) => ({
+      ...c,
+      accountName: accountName.get(c.accountId) ?? "",
+    })),
+    monthlyTotalCents: active.reduce((a, r) => a + r.monthlyCents, 0),
+    needsAttention: active.filter((r) => r.health.kind === "overdue" || r.health.kind === "no_charges").length,
+  };
 }

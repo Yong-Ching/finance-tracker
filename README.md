@@ -140,7 +140,21 @@ shown as **Unaccounted** on the dashboard.
    transfer by amount and date.
 3. Confirm the ones that are right. Nothing is linked until you do.
 
-### 5. Read the dashboard
+### 5. Track your subscriptions
+
+**Subscriptions** shows what you pay on repeat, and what that adds up to per
+month and per year.
+
+1. Under **Suggested**, the app lists charges that repeat at a steady amount and
+   interval (an Apple plan, a phone bill). Click **Track** and give it a name, or
+   **Dismiss** it if it is just a habit; dismissed ones never come back.
+2. Use **Add by hand** for anything the suggestions can't see yet, such as a
+   yearly plan.
+3. Each tracked subscription shows its last charge and when the next is due. It
+   is flagged if a charge is missed (judged against your latest statement, not
+   today's date) or if the price changes. Mark one **Cancelled** when you end it.
+
+### 6. Read the dashboard
 
 - Use the period picker (top right) to switch between a single month, the
   last 3 months, year to date or all time.

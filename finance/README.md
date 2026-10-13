@@ -86,6 +86,7 @@ With no key, the layer reports itself as off and everything else is unaffected.
     src/lib/ingest.ts       hash-dedupe -> detect -> parse -> continuity -> insert
     src/lib/classify.ts     override -> rule -> uncategorized
     src/lib/reconcile.ts    transfer matching and the pocket ledger
+    src/lib/subscriptions.ts  matching, status and detection of recurring charges
     src/lib/queries.ts      every dashboard aggregation
     src/lib/ai/redact.ts    what may leave the machine, and what may not
     src/lib/ai/review.ts    the Claude call; proposals only, never writes
@@ -102,7 +103,7 @@ is how you find a new statement's column geometry.
     npm run db:seed         # accounts, categories, rules
     npm run import:pdfs     # bulk-import ../data/statements/DBS (--reset to replace)
     npm run parity          # check the totals against the legacy Python output
-    npm test                # 49 tests: money, classification, parser, ingest, redaction
+    npm test                # money, classification, parsers, ingest, redaction, subscriptions
 
 ## Status
 

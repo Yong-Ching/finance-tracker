@@ -5,7 +5,7 @@ import { and, desc, eq, isNull, like, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
 import * as s from "@/db/schema";
-import { TXN_TYPES, MATCH_TYPES } from "@/db/schema";
+import { TXN_TYPES, MATCH_TYPES, SUBSCRIPTION_CADENCES } from "@/db/schema";
 import type { TxnType, MatchType } from "@/db/schema";
 
 /*
@@ -52,7 +52,7 @@ const ruleInput = z.object({
  */
 const refresh = () => {
   try {
-    for (const p of ["/", "/transactions", "/rules", "/reconcile", "/review", "/accounts"]) {
+    for (const p of ["/", "/transactions", "/rules", "/reconcile", "/review", "/accounts", "/subscriptions"]) {
       revalidatePath(p);
     }
   } catch {
@@ -491,4 +491,59 @@ export async function reviewBacklog(limit = 200) {
 
   refresh();
   return { sent, accounts: byAccount.size, errors };
+}
+
+/* ---------------------------------------------------------- subscriptions */
+
+const subscriptionInput = z.object({
+  name: z.string().trim().min(1).max(100),
+  pattern: z.string().trim().min(1).max(200),
+  accountId: id.nullable(),
+  amountCents: z.number().int().positive().max(100_000_000),
+  cadence: z.enum(SUBSCRIPTION_CADENCES),
+  note: z.string().max(500).nullable().optional(),
+});
+export type SubscriptionInput = z.infer<typeof subscriptionInput>;
+
+/** Tracks a subscription - from a detected candidate, or entered by hand. */
+export async function createSubscription(input: SubscriptionInput) {
+  const clean = subscriptionInput.parse(input);
+  const r = db.insert(s.subscriptions).values({ ...clean, status: "active" })
+    .returning({ id: s.subscriptions.id }).get();
+  refresh();
+  return r.id;
+}
+
+export async function updateSubscription(rawId: number, input: Partial<SubscriptionInput>) {
+  const clean = subscriptionInput.partial().parse(input);
+  db.update(s.subscriptions).set(clean).where(eq(s.subscriptions.id, id.parse(rawId))).run();
+  refresh();
+}
+
+/** Cancel (keeps the record, leaves the monthly total) or reactivate. */
+export async function setSubscriptionStatus(rawId: number, status: "active" | "cancelled") {
+  const st = z.enum(["active", "cancelled"]).parse(status);
+  db.update(s.subscriptions)
+    .set({ status: st, cancelledAt: st === "cancelled" ? sql`(unixepoch())` : null })
+    .where(eq(s.subscriptions.id, id.parse(rawId)))
+    .run();
+  refresh();
+}
+
+/**
+ * "Not a subscription." Stored as a dismissed row so the same repeating charge
+ * is never proposed again; it never counts toward any total.
+ */
+export async function dismissCandidate(input: { pattern: string; accountId: number; amountCents: number }) {
+  const clean = subscriptionInput.pick({ pattern: true, amountCents: true })
+    .extend({ accountId: id }).parse(input);
+  db.insert(s.subscriptions)
+    .values({ ...clean, name: clean.pattern, cadence: "monthly", status: "dismissed" })
+    .run();
+  refresh();
+}
+
+export async function deleteSubscription(rawId: number) {
+  db.delete(s.subscriptions).where(eq(s.subscriptions.id, id.parse(rawId))).run();
+  refresh();
 }

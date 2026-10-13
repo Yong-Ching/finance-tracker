@@ -358,3 +358,48 @@ export const aiSuggestions = sqliteTable(
 
 export type AiReview = typeof aiReviews.$inferSelect;
 export type AiSuggestion = typeof aiSuggestions.$inferSelect;
+
+/* ---------------------------------------------------------- subscriptions */
+
+export const SUBSCRIPTION_CADENCES = ["weekly", "monthly", "quarterly", "yearly"] as const;
+export type SubscriptionCadence = (typeof SUBSCRIPTION_CADENCES)[number];
+
+/**
+ * active    - tracked, and counted in the monthly total
+ * cancelled - tracked once, ended by the user; kept for the record
+ * dismissed - a detected candidate the user said is not a subscription, kept
+ *             only so it is not suggested again
+ */
+export const SUBSCRIPTION_STATUSES = ["active", "cancelled", "dismissed"] as const;
+export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
+
+/**
+ * A recurring charge the user chose to track. Nothing becomes a subscription
+ * by detection alone: candidates are proposed, and only the user's confirmation
+ * creates an active row - the same "never guess" rule as categories.
+ *
+ * Charges are not stored here. They are matched at read time: an outflow whose
+ * normalised description contains `pattern`, on `accountId` if set, within a
+ * tolerance of `amountCents`. Several subscriptions can share a merchant (one
+ * APPLE.COM/BILL line, several plans), which is why the amount is part of the key.
+ */
+export const subscriptions = sqliteTable(
+  "subscriptions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    pattern: text("pattern").notNull(),
+    /** null = any account. */
+    accountId: integer("account_id").references(() => accounts.id),
+    /** The expected charge, positive. */
+    amountCents: integer("amount_cents").notNull(),
+    cadence: text("cadence").$type<SubscriptionCadence>().notNull().default("monthly"),
+    status: text("status").$type<SubscriptionStatus>().notNull().default("active"),
+    note: text("note"),
+    createdAt: integer("created_at").notNull().default(now),
+    cancelledAt: integer("cancelled_at"),
+  },
+  (t) => [index("subscriptions_status_idx").on(t.status)],
+);
+
+export type Subscription = typeof subscriptions.$inferSelect;
