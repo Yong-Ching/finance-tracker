@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  merchantKey, normalise, matches, monthlyCents, nextDue, assess, detectCandidates,
+  merchantKey, normalise, matches, monthlyCents, nextDue, assess, detectCandidates, timeline,
   type ChargeRow,
 } from "@/lib/subscriptions";
 
@@ -133,5 +133,36 @@ describe("detecting candidates", () => {
     const rows = months.map((m, i) => charge(`2026-${m}-03`, 75_000, PAYNOW(String(1000000 + i)), 1, "Rent"));
     const [c] = detectCandidates(rows, [], asOf);
     expect(c).toMatchObject({ pattern: "JOHN DOE", amountCents: 75_000, count: 5, categoryName: "Rent" });
+  });
+});
+
+describe("tracing the charge history", () => {
+  it("lists every charge, oldest first, with no gaps when none were missed", () => {
+    const t = timeline(monthly(STREAM, 1598, ["04", "05", "06"]), "monthly", "2026-06-30");
+    expect(t.map((e) => e.kind)).toEqual(["charge", "charge", "charge"]);
+  });
+
+  it("marks each cycle that passed with no charge", () => {
+    const t = timeline(monthly(STREAM, 1598, ["01", "02", "05"]), "monthly", "2026-05-31");
+    expect(t.map((e) => (e.kind === "charge" ? e.charge.txnDate : `missed ${e.due}`))).toEqual([
+      "2026-01-15", "2026-02-15", "missed 2026-03-15", "missed 2026-04-15", "2026-05-15",
+    ]);
+  });
+
+  it("marks cycles missed after the last charge, up to the statement end only", () => {
+    const t = timeline(monthly(STREAM, 1598, ["01", "02"]), "monthly", "2026-04-30");
+    expect(t.filter((e) => e.kind === "missed").map((e) => (e as { due: string }).due))
+      .toEqual(["2026-03-15", "2026-04-15"]);
+  });
+
+  it("does not call a slightly late charge missed", () => {
+    const rows = [charge("2026-01-15", 1598, STREAM), charge("2026-02-24", 1598, STREAM)];
+    expect(timeline(rows, "monthly", "2026-02-28").some((e) => e.kind === "missed")).toBe(false);
+  });
+
+  it("gives each suggestion the charges it rests on", () => {
+    const [c] = detectCandidates(monthly(STREAM, 1598, ["02", "03", "04", "05", "06"]), [], asOf);
+    expect(c.charges.map((x) => x.txnDate)).toEqual(
+      ["2026-02-15", "2026-03-15", "2026-04-15", "2026-05-15", "2026-06-15"]);
   });
 });

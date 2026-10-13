@@ -4,16 +4,11 @@ import { suggestName } from "@/lib/subscriptions";
 import { formatMoney } from "@/lib/money";
 import { Card, Stat, Empty } from "@/components/ui";
 import { CandidateActions, NewSubscriptionForm, SubscriptionRowActions } from "@/components/SubscriptionActions";
+import { EVERY, Health, StatementLink, th, td, rowCls as row, headRow } from "@/components/subscription-ui";
 
 export const dynamic = "force-dynamic";
 
-const EVERY = { weekly: "week", monthly: "month", quarterly: "quarter", yearly: "year" } as const;
-
-// Every column gets breathing room on both sides; numbers sit right-aligned.
-const th = "px-3 py-2 font-medium first:pl-0 last:pr-0";
-const row = "border-b border-[var(--border)] last:border-0 hover:bg-[var(--surface-2)]";
-
-/** The transactions behind a subscription, on the Transactions page. */
+/** Matching charges on the Transactions page (by text only, for a suggestion). */
 const chargesHref = (pattern: string, accountId: number | null) =>
   `/transactions?q=${encodeURIComponent(pattern)}${accountId ? `&account=${accountId}` : ""}`;
 
@@ -29,30 +24,12 @@ function Count({ label, n, hint, warn }: { label: string; n: number; hint?: stri
   );
 }
 
-function Health({ r }: { r: SubscriptionRow }) {
-  const h = r.health;
-  if (h.kind === "no_charges") {
-    return <span className="text-[var(--status-warning)]">No matching charges yet</span>;
-  }
-  if (h.kind === "overdue") {
-    return (
-      <span className="text-[var(--status-warning)]" title={`Statements run to ${r.asOf}`}>
-        Not charged since {r.lastCharge!.txnDate} - cancelled?
-      </span>
-    );
-  }
-  if (h.kind === "price_changed") {
-    return <span>Now {formatMoney(h.nowCents)}</span>;
-  }
-  return <span className="text-[var(--text-muted)]">On track</span>;
-}
-
 function SubscriptionTable({ rows, muted = false }: { rows: SubscriptionRow[]; muted?: boolean }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[900px] text-[13px]">
         <thead>
-          <tr className="border-b border-[var(--border)] text-left text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
+          <tr className={headRow}>
             <th className={th}>Subscription</th>
             <th className={`${th} text-right`}>Charge</th>
             <th className={`${th} text-right`}>Per month</th>
@@ -66,11 +43,13 @@ function SubscriptionTable({ rows, muted = false }: { rows: SubscriptionRow[]; m
           {rows.map((r) => (
             <tr key={r.id} className={`${row} ${muted ? "opacity-55" : ""}`}>
               <td className="px-3 first:pl-0 last:pr-0 py-2">
-                <div className="font-medium">{r.name}</div>
+                <Link href={`/subscriptions/${r.id}`} className="font-medium hover:underline" title="Charge history and statements">
+                  {r.name}
+                </Link>
                 <Link
-                  href={chargesHref(r.pattern, r.accountId)}
-                  className="text-[11px] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:underline"
-                  title="Show the charges"
+                  href={`/subscriptions/${r.id}`}
+                  className="block text-[11px] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:underline"
+                  title="Charge history and statements"
                 >
                   {r.pattern}
                   {r.accountName && ` · ${r.accountName}`}
@@ -93,12 +72,13 @@ function SubscriptionTable({ rows, muted = false }: { rows: SubscriptionRow[]; m
                 ) : "-"}
               </td>
               <td className="px-3 first:pl-0 last:pr-0 tnum py-2 text-[var(--text-secondary)]">{muted ? "-" : r.nextDue ?? "-"}</td>
-              <td className="px-3 first:pl-0 last:pr-0 py-2">{muted ? <span className="text-[var(--text-muted)]">Cancelled</span> : <Health r={r} />}</td>
+              <td className="px-3 first:pl-0 last:pr-0 py-2"><Health r={r} /></td>
               <td className="px-3 first:pl-0 last:pr-0 py-2">
                 <SubscriptionRowActions
                   id={r.id}
                   status={r.status === "cancelled" ? "cancelled" : "active"}
                   name={r.name}
+                  pattern={r.pattern}
                   amountCents={r.amountCents}
                   cadence={r.cadence}
                   priceNowCents={!muted && r.health.kind === "price_changed" ? r.health.nowCents : undefined}
@@ -153,7 +133,7 @@ export default async function SubscriptionsPage() {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[900px] text-[13px]">
               <thead>
-                <tr className="border-b border-[var(--border)] text-left text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
+                <tr className={headRow}>
                   <th className={th}>Merchant</th>
                   <th className={`${th} text-right`}>Charge</th>
                   <th className={th}>Seen</th>
@@ -178,8 +158,23 @@ export default async function SubscriptionsPage() {
                       {formatMoney(c.amountCents)}
                       <span className="text-[var(--text-muted)]"> / {EVERY[c.cadence]}</span>
                     </td>
-                    <td className="px-3 first:pl-0 last:pr-0 tnum py-2 text-[var(--text-secondary)]">
-                      {c.count} times since {c.firstDate}
+                    <td className={`${td} text-[var(--text-secondary)]`}>
+                      <details className="group">
+                        <summary className="tnum cursor-pointer list-none hover:text-[var(--text-primary)]">
+                          {c.count} times since {c.firstDate}
+                          <span className="ml-1 text-[var(--text-muted)] group-open:hidden">&#9656;</span>
+                          <span className="ml-1 hidden text-[var(--text-muted)] group-open:inline">&#9662;</span>
+                        </summary>
+                        <ul className="mt-1.5 space-y-0.5 text-[12px]">
+                          {[...c.charges].reverse().map((x) => (
+                            <li key={x.id} className="tnum flex gap-3">
+                              <span>{x.txnDate}</span>
+                              <span className="w-20 text-right">{formatMoney(Math.abs(x.amountCents))}</span>
+                              <StatementLink st={x.statementId ? o.statements[x.statementId] : undefined} compact />
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
                     </td>
                     <td className="px-3 first:pl-0 last:pr-0 tnum py-2 text-[var(--text-secondary)]">{c.lastDate}</td>
                     <td className="px-3 first:pl-0 last:pr-0 py-2 text-[var(--text-secondary)]">{c.categoryName ?? "-"}</td>

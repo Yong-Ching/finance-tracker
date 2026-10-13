@@ -15,6 +15,8 @@ export interface ChargeRow {
   amountCents: number; // signed; outflows are negative
   descriptionRaw: string;
   categoryName?: string | null;
+  /** The statement the charge was read from - the bill it can be traced to. */
+  statementId?: number | null;
 }
 
 export interface TrackedLike {
@@ -150,6 +152,51 @@ export function assess(
   return { charges, lastCharge, nextDue: due, health };
 }
 
+/* --------------------------------------------------------------- timeline */
+
+export type TimelineEntry =
+  | { kind: "charge"; charge: ChargeRow }
+  | { kind: "missed"; due: string };
+
+/**
+ * The charge history with its gaps made visible: a cycle that passed (by more
+ * than the grace period) with no charge becomes a "missed" entry, including any
+ * after the last charge up to the statement end. Oldest first.
+ */
+export function timeline(
+  charges: ChargeRow[],
+  cadence: SubscriptionCadence,
+  asOf: string | null,
+): TimelineEntry[] {
+  const sorted = [...charges].sort((a, b) => a.txnDate.localeCompare(b.txnDate));
+  const grace = Math.max(7, Math.round(CADENCE_DAYS[cadence] * 0.25));
+  const out: TimelineEntry[] = [];
+  // Between two charges: a due date was skipped only if the later charge lands
+  // near or after the NEXT due date - a late charge still pays its own cycle.
+  const gapsBefore = (from: string, chargeDate: string) => {
+    let due = nextDue(from, cadence);
+    while (daysBetween(nextDue(due, cadence), chargeDate) >= -grace) {
+      out.push({ kind: "missed", due });
+      due = nextDue(due, cadence);
+    }
+  };
+  // After the last charge: a due date is missed once it is past by more than
+  // the grace period at the statement end.
+  const gapsAfter = (from: string, end: string) => {
+    let due = nextDue(from, cadence);
+    while (daysBetween(due, end) > grace) {
+      out.push({ kind: "missed", due });
+      due = nextDue(due, cadence);
+    }
+  };
+  sorted.forEach((c, i) => {
+    if (i > 0) gapsBefore(sorted[i - 1].txnDate, c.txnDate);
+    out.push({ kind: "charge", charge: c });
+  });
+  if (sorted.length && asOf) gapsAfter(sorted.at(-1)!.txnDate, asOf);
+  return out;
+}
+
 /* -------------------------------------------------------------- detection */
 
 export interface Candidate {
@@ -161,6 +208,8 @@ export interface Candidate {
   firstDate: string;
   lastDate: string;
   categoryName: string | null;
+  /** The charges the suggestion rests on, oldest first, so it can be checked. */
+  charges: ChargeRow[];
 }
 
 /** Median gap between charges that reads as each cadence. Yearly needs years of data. */
@@ -247,6 +296,7 @@ export function detectCandidates(
       out.push({
         pattern, accountId, amountCents, cadence,
         count: cl.length, firstDate: cl[0].txnDate, lastDate: last.txnDate, categoryName,
+        charges: cl,
       });
     }
   }

@@ -105,8 +105,20 @@ function createWindow() {
 
   // Links to anything but the local server open in the real browser.
   const isLocal = (url) => appUrl && url.startsWith(appUrl);
+  // A local link opened in a new window (a statement PDF) gets its own window,
+  // with Chromium's PDF viewer switched on.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (!isLocal(url)) shell.openExternal(url);
+    if (isLocal(url)) {
+      return {
+        action: "allow",
+        overrideBrowserWindowOptions: {
+          width: 980,
+          height: 1100,
+          webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, plugins: true },
+        },
+      };
+    }
+    shell.openExternal(url);
     return { action: "deny" };
   });
   win.webContents.on("will-navigate", (e, url) => {

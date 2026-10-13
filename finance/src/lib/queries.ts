@@ -4,8 +4,8 @@ import { db } from "@/db/client";
 import * as s from "@/db/schema";
 import type { Period } from "./period";
 import {
-  assess, detectCandidates, monthlyCents,
-  type Candidate, type ChargeRow, type SubscriptionState,
+  assess, detectCandidates, matches, monthlyCents, timeline,
+  type Candidate, type ChargeRow, type SubscriptionState, type TimelineEntry,
 } from "./subscriptions";
 
 /** txnTypes that count toward the dashboard's three buckets. */
@@ -297,6 +297,8 @@ export interface TxnFilters {
   from?: string;
   to?: string;
   reviewOnly?: boolean;
+  /** Exactly the charges matched to one subscription (amount tolerance included). */
+  subscriptionId?: number;
   page?: number;
   perPage?: number;
 }
@@ -318,6 +320,9 @@ export interface TxnRow {
   statementStatus: string | null;
 }
 
+/** An id list as a condition; an empty list matches nothing rather than everything. */
+const idsIn = (ids: number[]) => (ids.length ? inArray(s.transactions.id, ids) : sql`0`);
+
 function txnWhere(f: TxnFilters) {
   const clauses = [
     f.q ? like(sql`upper(${s.transactions.descriptionRaw})`, `%${f.q.toUpperCase()}%`) : undefined,
@@ -335,6 +340,7 @@ function txnWhere(f: TxnFilters) {
     f.from ? gte(s.transactions.txnDate, f.from) : undefined,
     f.to ? lte(s.transactions.txnDate, f.to) : undefined,
     f.reviewOnly ? eq(s.transactions.isReviewed, false) : undefined,
+    f.subscriptionId !== undefined ? idsIn(subscriptionChargeIds(f.subscriptionId)) : undefined,
   ].filter(Boolean);
   return clauses.length ? and(...clauses) : undefined;
 }
@@ -603,6 +609,7 @@ function outflows(): ChargeRow[] {
       amountCents: s.transactions.amountCents,
       descriptionRaw: s.transactions.descriptionRaw,
       categoryName: s.categories.name,
+      statementId: s.transactions.statementId,
     })
     .from(s.transactions)
     .leftJoin(s.categories, eq(s.categories.id, s.transactions.categoryId))
@@ -629,40 +636,113 @@ function statementEnds(): Map<number, string> {
   return new Map(rows.filter((r) => r.end).map((r) => [r.accountId, r.end]));
 }
 
-export function subscriptionOverview(): SubscriptionOverview {
+function toRow(
+  x: s.Subscription,
+  charges: ChargeRow[],
+  ends: Map<number, string>,
+  accountName: Map<number, string>,
+): SubscriptionRow {
+  // Judge against the account the charges actually come from.
+  const first = assess(x, charges, null);
+  const acct = x.accountId ?? first.lastCharge?.accountId ?? null;
+  const asOf = acct !== null ? ends.get(acct) ?? null : null;
+  return {
+    ...x,
+    ...assess(x, charges, asOf),
+    asOf,
+    accountName: x.accountId !== null ? accountName.get(x.accountId) ?? null : null,
+    monthlyCents: monthlyCents(x.amountCents, x.cadence),
+  };
+}
+
+const accountNames = () => new Map(allAccounts().map((a) => [a.id, a.name]));
+
+export interface StatementRef {
+  id: number;
+  filename: string;
+  periodFrom: string | null;
+  periodTo: string | null;
+  accountName: string;
+  hasFile: boolean;
+}
+
+/** The statements a set of charges came from, keyed by id. */
+function statementRefs(charges: ChargeRow[]): Record<number, StatementRef> {
+  const ids = [...new Set(charges.map((c) => c.statementId).filter((x): x is number => !!x))];
+  if (!ids.length) return {};
+  const rows = db
+    .select({
+      id: s.statements.id,
+      filename: s.statements.filename,
+      periodFrom: s.statements.periodFrom,
+      periodTo: s.statements.periodTo,
+      storedPath: s.statements.storedPath,
+      accountName: s.accounts.name,
+    })
+    .from(s.statements)
+    .innerJoin(s.accounts, eq(s.accounts.id, s.statements.accountId))
+    .where(inArray(s.statements.id, ids))
+    .all();
+  return Object.fromEntries(
+    rows.map(({ storedPath, ...r }) => [r.id, { ...r, hasFile: !!storedPath }]),
+  );
+}
+
+export function subscriptionOverview(): SubscriptionOverview & { statements: Record<number, StatementRef> } {
   const charges = outflows();
   const ends = statementEnds();
-  const accountName = new Map(allAccounts().map((a) => [a.id, a.name]));
+  const names = accountNames();
   const subs = db.select().from(s.subscriptions).orderBy(asc(s.subscriptions.name)).all();
 
-  const rows: SubscriptionRow[] = subs
-    .filter((x) => x.status !== "dismissed")
-    .map((x) => {
-      const state = assess(x, charges, null);
-      // Judge against the account the charges actually come from.
-      const acct = x.accountId ?? state.lastCharge?.accountId ?? null;
-      const asOf = acct !== null ? ends.get(acct) ?? null : null;
-      return {
-        ...x,
-        ...assess(x, charges, asOf),
-        asOf,
-        accountName: x.accountId !== null ? accountName.get(x.accountId) ?? null : null,
-        monthlyCents: monthlyCents(x.amountCents, x.cadence),
-      };
-    });
-
-  const active = rows
-    .filter((r) => r.status === "active")
-    .sort((a, b) => b.monthlyCents - a.monthlyCents);
+  const rows = subs.filter((x) => x.status !== "dismissed").map((x) => toRow(x, charges, ends, names));
+  const active = rows.filter((r) => r.status === "active").sort((a, b) => b.monthlyCents - a.monthlyCents);
+  const candidates = detectCandidates(charges, subs, ends).map((c) => ({
+    ...c,
+    accountName: names.get(c.accountId) ?? "",
+  }));
 
   return {
     active,
     cancelled: rows.filter((r) => r.status === "cancelled"),
-    candidates: detectCandidates(charges, subs, ends).map((c) => ({
-      ...c,
-      accountName: accountName.get(c.accountId) ?? "",
-    })),
+    candidates,
     monthlyTotalCents: active.reduce((a, r) => a + r.monthlyCents, 0),
     needsAttention: active.filter((r) => r.health.kind === "overdue" || r.health.kind === "no_charges").length,
+    statements: statementRefs(candidates.flatMap((c) => c.charges)),
+  };
+}
+
+export function getSubscription(subscriptionId: number) {
+  return db.select().from(s.subscriptions).where(eq(s.subscriptions.id, subscriptionId)).get() ?? null;
+}
+
+/** Ids of the charges matched to a subscription; empty if it does not exist. */
+export function subscriptionChargeIds(subscriptionId: number): number[] {
+  const sub = db.select().from(s.subscriptions).where(eq(s.subscriptions.id, subscriptionId)).get();
+  if (!sub) return [];
+  return outflows().filter((c) => matches(c, sub)).map((c) => c.id);
+}
+
+export interface SubscriptionDetail {
+  sub: SubscriptionRow;
+  /** Newest first, missed cycles included. */
+  history: TimelineEntry[];
+  statements: Record<number, StatementRef>;
+  paidCents: number;
+  averageCents: number;
+}
+
+/** One subscription with every charge traced back to its statement. */
+export function subscriptionDetail(subscriptionId: number): SubscriptionDetail | null {
+  const x = db.select().from(s.subscriptions).where(eq(s.subscriptions.id, subscriptionId)).get();
+  if (!x || x.status === "dismissed") return null;
+  const sub = toRow(x, outflows(), statementEnds(), accountNames());
+  const paidCents = sub.charges.reduce((a, c) => a + Math.abs(c.amountCents), 0);
+  return {
+    sub,
+    // A cancelled subscription is expected to stop; its silence is not "missed".
+    history: timeline(sub.charges, sub.cadence, sub.status === "active" ? sub.asOf : null).reverse(),
+    statements: statementRefs(sub.charges),
+    paidCents,
+    averageCents: sub.charges.length ? Math.round(paidCents / sub.charges.length) : 0,
   };
 }

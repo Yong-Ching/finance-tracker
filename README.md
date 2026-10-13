@@ -153,6 +153,10 @@ month and per year.
 3. Each tracked subscription shows its last charge and when the next is due. It
    is flagged if a charge is missed (judged against your latest statement, not
    today's date) or if the price changes. Mark one **Cancelled** when you end it.
+4. Click a subscription to trace it: every charge matched to it, each linked to
+   the statement it appeared on (opens the original PDF), with missed months
+   shown as gaps. **Show in Transactions** opens exactly those charges to edit.
+   A suggestion expands the same way, so you can check it before tracking.
 
 ### 6. Read the dashboard
 

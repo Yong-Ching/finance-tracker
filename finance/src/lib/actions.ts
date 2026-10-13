@@ -25,6 +25,9 @@ const txnFilters = z.object({
   from: z.string().max(10).optional(),
   to: z.string().max(10).optional(),
   reviewOnly: z.boolean().optional(),
+  // Must be listed: zod drops unknown keys, and a dropped filter would widen a
+  // bulk edit from one subscription's charges to everything else matching.
+  subscriptionId: id.optional(),
 });
 
 const txnPatch = z.object({

@@ -79,13 +79,13 @@ export function CandidateActions({
 /* --------------------------------------------------- tracked subscriptions */
 
 export function SubscriptionRowActions({
-  id, status, name, amountCents, cadence, priceNowCents,
+  id, status, name, pattern, amountCents, cadence, priceNowCents,
 }: {
-  id: number; status: "active" | "cancelled"; name: string; amountCents: number;
+  id: number; status: "active" | "cancelled"; name: string; pattern: string; amountCents: number;
   cadence: SubscriptionCadence; priceNowCents?: number;
 }) {
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState({ name, amount: formatCents(amountCents).replace(/,/g, ""), cadence });
+  const [draft, setDraft] = useState({ name, pattern, amount: formatCents(amountCents).replace(/,/g, ""), cadence });
   const { pending, run } = useAction();
   const cents = toCents(draft.amount);
 
@@ -95,6 +95,11 @@ export function SubscriptionRowActions({
         <input
           value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })}
           aria-label="Name" className={`${input} w-36`}
+        />
+        <input
+          value={draft.pattern} onChange={(e) => setDraft({ ...draft, pattern: e.target.value })}
+          aria-label="Description contains" title="Text the statement line contains"
+          className={`${input} w-40`}
         />
         <input
           value={draft.amount} onChange={(e) => setDraft({ ...draft, amount: e.target.value })}
@@ -108,9 +113,11 @@ export function SubscriptionRowActions({
           {CADENCES.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
         <button
-          className={primary} disabled={pending || !draft.name.trim() || cents === null}
+          className={primary} disabled={pending || !draft.name.trim() || !draft.pattern.trim() || cents === null}
           onClick={() => run(async () => {
-            await updateSubscription(id, { name: draft.name.trim(), amountCents: cents!, cadence: draft.cadence });
+            await updateSubscription(id, {
+              name: draft.name.trim(), pattern: draft.pattern.trim(), amountCents: cents!, cadence: draft.cadence,
+            });
             setEditing(false);
           })}
         >

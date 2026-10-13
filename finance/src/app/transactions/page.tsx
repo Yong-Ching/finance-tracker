@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { formatCents } from "@/lib/money";
-import { listTransactions, allCategories, allAccounts, suggestionsByTxnId, flagsByTxnId } from "@/lib/queries";
+import {
+  listTransactions, allCategories, allAccounts, suggestionsByTxnId, flagsByTxnId, getSubscription,
+} from "@/lib/queries";
 import { TransactionsTable } from "@/components/TransactionsTable";
 import { Card, Empty } from "@/components/ui";
 
@@ -24,11 +26,13 @@ export default async function TransactionsPage({
     from: sp.from || undefined,
     to: sp.to || undefined,
     reviewOnly: sp.review === "1",
+    subscriptionId: positiveInt(sp.subscription),
     page,
     perPage: PER_PAGE,
   };
 
   const { rows, total, sumCents } = listTransactions(filters);
+  const subscription = filters.subscriptionId ? getSubscription(filters.subscriptionId) : null;
   const categories = allCategories();
   const accounts = allAccounts();
 
@@ -67,8 +71,28 @@ export default async function TransactionsPage({
         </span>
       </div>
 
+      {filters.subscriptionId !== undefined && (
+        <div className="card flex flex-wrap items-center gap-3 px-3 py-2 text-[13px]">
+          <span>
+            Charges of{" "}
+            {subscription ? (
+              <Link href={`/subscriptions/${subscription.id}`} className="font-medium hover:underline">
+                {subscription.name}
+              </Link>
+            ) : (
+              <span className="font-medium">a subscription that no longer exists</span>
+            )}
+            <span className="text-[var(--text-muted)]"> &middot; only rows matched to it, amount tolerance included</span>
+          </span>
+          <Link href={qs({ subscription: undefined, page: undefined })} className="ml-auto text-[var(--text-secondary)] hover:underline">
+            Show all transactions
+          </Link>
+        </div>
+      )}
+
       {/* Filters live in one row above the table. */}
       <form className="card flex flex-wrap items-end gap-3 p-3" action="/transactions">
+        {sp.subscription && <input type="hidden" name="subscription" value={sp.subscription} />}
         <label className="flex flex-col gap-1 text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
           Search
           <input
@@ -129,6 +153,7 @@ export default async function TransactionsPage({
             from: filters.from,
             to: filters.to,
             reviewOnly: filters.reviewOnly,
+            subscriptionId: filters.subscriptionId,
           }}
         />
       ) : (
@@ -147,6 +172,11 @@ export default async function TransactionsPage({
     </div>
   );
 }
+
+const positiveInt = (raw: string | undefined) => {
+  const n = Number(raw);
+  return raw && Number.isInteger(n) && n > 0 ? n : undefined;
+};
 
 /** "none" | "12" | "12,15,19" -> the shape listTransactions expects. */
 function parseCategory(raw: string | undefined) {
