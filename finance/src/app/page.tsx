@@ -2,14 +2,18 @@ import Link from "next/link";
 import { formatMoney, formatCents } from "@/lib/money";
 import { resolvePeriod, previousPeriod } from "@/lib/period";
 import {
-  availableMonths, totals, byMonth, expenseByCategory,
-  balanceSeries, accountCards, attention,
+  availableMonths, totals, byMonth, expenseByCategory, balanceSeries, accountCards, attention,
+  subscriptionOverview, topMerchants,
 } from "@/lib/queries";
-import { MonthlyBuckets, BalanceLine, CategoryBars } from "@/components/charts";
+import { BalanceLine } from "@/components/charts";
 import { PeriodPicker } from "@/components/PeriodPicker";
-import { Card, Stat, Empty, Pill } from "@/components/ui";
+import { QuickFind } from "@/components/DashboardLive";
+import { Card, Stat, Empty } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
+
+const MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const monthName = (ym: string) => `${MONTH[Number(ym.slice(5, 7)) - 1]} ${ym.slice(2, 4)}`;
 
 export default async function Dashboard({
   searchParams,
@@ -34,12 +38,13 @@ export default async function Dashboard({
   // "vs prior" is nonsense when the preceding window is empty (e.g. All time).
   const d = (now: number, before: number) => (p.count > 0 ? now - before : null);
   const monthly = byMonth();
-  const cats = expenseByCategory(period);
+  const cats = expenseByCategory(period, undefined, 8);
+  const catTotal = cats.reduce((a, c) => a + c.totalCents, 0);
   const balances = balanceSeries(period);
   const accounts = accountCards(period);
   const flags = attention();
-
-  const catTotal = cats.reduce((a, c) => a + c.totalCents, 0);
+  const subs = subscriptionOverview();
+  const merchants = topMerchants(period, 3);
 
   /**
    * Every figure on this page is a link to the transactions behind it, with the
@@ -51,7 +56,6 @@ export default async function Dashboard({
     for (const [k, v] of Object.entries(params)) if (v) q.set(k, v);
     return `/transactions?${q}`;
   };
-
   const sliceHref = (c: (typeof cats)[number]) =>
     c.categoryId !== null
       ? drill({ category: String(c.categoryId) })
@@ -59,168 +63,211 @@ export default async function Dashboard({
         ? drill({ category: c.memberIds.join(",") })
         : drill({ category: "none" });
 
+  const inPeriod = (m: string) => m >= period.from.slice(0, 7) && m <= period.to.slice(0, 7);
+  const looseEnds = [
+    flags.needsReview > 0 && { n: flags.needsReview, text: "need a category", href: "/transactions?review=1" },
+    flags.unmatchedTransfers > 0 && { n: flags.unmatchedTransfers, text: "unmatched transfers", href: "/reconcile" },
+    flags.proposedLinks > 0 && { n: flags.proposedLinks, text: "links to confirm", href: "/reconcile" },
+    flags.quarantined > 0 && { n: flags.quarantined, text: "quarantined statements", href: "/accounts" },
+  ].filter(Boolean) as { n: number; text: string; href: string }[];
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-baseline gap-3">
-        <h1 className="text-[15px] font-semibold tracking-tight">{period.label}</h1>
-        <span className="text-[12px] text-[var(--text-muted)]">
-          {t.count} transactions &middot; click any figure to see what is behind it
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <h1 className="text-[15px] font-semibold">{period.label}</h1>
+        <span className="text-[13px] text-[var(--text-muted)]">
+          {t.count} transactions &middot; every figure opens what is behind it
         </span>
-        <div className="ml-auto">
-          <PeriodPicker months={months} value={period.key} />
+        <div className="ml-auto"><PeriodPicker months={months} value={period.key} /></div>
+      </div>
+
+      {/* Totals, plus the money no statement accounts for yet */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <div className="card"><Stat label="Money in" cents={t.incomeCents} delta={d(t.incomeCents, p.incomeCents)} href={drill({ type: "income" })} /></div>
+        <div className="card"><Stat label="Expenses" cents={t.expenseCents} delta={d(t.expenseCents, p.expenseCents)} href={drill({ type: "expense" })} /></div>
+        <div className="card"><Stat label="Savings" cents={t.savingsCents} delta={d(t.savingsCents, p.savingsCents)} href={drill({ type: "savings" })} /></div>
+        <div className="card">
+          <Stat
+            label="Net" cents={t.netCents} href={drill({})}
+            hint={t.savingsRate !== null ? `${Math.round(t.savingsRate * 100)}% savings rate` : undefined}
+          />
         </div>
-      </div>
-
-      {/* 1. headline band -------------------------------------------------- */}
-      <div className="card grid grid-cols-2 divide-x divide-y divide-[var(--border)] sm:grid-cols-4 sm:divide-y-0">
-        <Stat label="Money in" cents={t.incomeCents} delta={d(t.incomeCents, p.incomeCents)}
-          href={drill({ type: "income" })} />
-        <Stat label="Expenses" cents={t.expenseCents} delta={d(t.expenseCents, p.expenseCents)}
-          href={drill({ type: "expense" })} />
-        <Stat label="Savings" cents={t.savingsCents} delta={d(t.savingsCents, p.savingsCents)}
-          href={drill({ type: "savings" })} />
-        <Stat
-          label="Net"
-          cents={t.netCents}
-          hint={t.savingsRate !== null ? `${Math.round(t.savingsRate * 100)}% savings rate` : undefined}
-          href={drill({})}
-        />
-      </div>
-
-      {/* 2. unaccounted ----------------------------------------------------- */}
-      {t.unaccountedCents > 0 && (
-        <section className="card flex flex-wrap items-center gap-x-5 gap-y-2 p-4">
-          <div className="hatch h-9 w-1.5 rounded-sm" aria-hidden />
+        <Link
+          href="/reconcile"
+          className="card col-span-2 flex gap-3 px-4 py-3 transition-colors hover:bg-[var(--surface-2)] lg:col-span-1"
+          title="Money moved into YouTrip or the Citibank card with no itemised statement yet. Not counted in Expenses."
+        >
+          <div className="hatch w-1.5 shrink-0 rounded-sm" aria-hidden />
           <div>
-            <div className="text-[11px] uppercase tracking-wide text-[var(--text-muted)]">Unaccounted</div>
-            <div className="tnum text-[22px] font-semibold leading-tight">{formatMoney(t.unaccountedCents)}</div>
+            <div className="text-[13px] text-[var(--text-muted)]">Unaccounted</div>
+            <div className="tnum mt-1 text-[24px] font-semibold leading-none tracking-tight">{formatMoney(t.unaccountedCents)}</div>
+            <div className="mt-1.5 text-[12px] text-[var(--text-muted)]">in pockets, not in Expenses</div>
           </div>
-          <p className="max-w-xl flex-1 text-[13px] text-[var(--text-secondary)]">
-            Money moved into a pocket - YouTrip or the Citibank card - whose itemised statement has not been
-            uploaded. It is <strong className="font-semibold">not</strong> counted in Expenses above, because what it
-            was spent on is unknown.
-          </p>
-          <Pill href="/reconcile" tone="warning">Reconcile</Pill>
-        </section>
-      )}
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        {/* 3. cash over time ------------------------------------------------ */}
-        <Card title="Cash over time" subtitle="DBS running balance. Other accounts have their own scale, so they are not pooled here.">
-          {balances.length > 1 ? <BalanceLine data={balances} /> : <Empty>Not enough data in this period.</Empty>}
-        </Card>
-
-        {/* 4. buckets over time --------------------------------------------- */}
-        <Card title="Buckets by month" subtitle="Internal transfers are excluded by construction">
-          <MonthlyBuckets data={monthly} />
-        </Card>
+        </Link>
       </div>
 
-      {/* 5. where the money went -------------------------------------------- */}
-      <Card
-        title="Where the money went"
-        subtitle={`Top ${Math.min(5, cats.length)} expense categories plus the remainder`}
-      >
-        {cats.length ? (
-          <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
-            <CategoryBars data={cats.map((c) => ({ ...c, href: sliceHref(c) }))} />
-            <table className="w-full self-start text-[13px]">
+      <div className="grid gap-3 lg:grid-cols-12">
+        {/* Balance */}
+        <Card className="lg:col-span-8" title="Cash in DBS" subtitle="Running balance; click a day to see it">
+          {balances.length > 1 ? <BalanceLine data={balances} height={236} /> : <Empty>Not enough data in this period.</Empty>}
+        </Card>
+
+        {/* Where it went: a receipt whose rows add up to Expenses */}
+        <section
+          className="bg-[var(--surface-1)] px-4 pb-8 pt-4 lg:col-span-4"
+          style={{ clipPath: zigzag(24, 7), borderRadius: "10px 10px 0 0" }}
+        >
+          <div className="flex items-baseline justify-between">
+            <h2 className="text-[14px] font-semibold">Where it went</h2>
+            <span className="text-[12px] text-[var(--text-muted)]">{cats.reduce((a, c) => a + c.count, 0)} txns</span>
+          </div>
+          {cats.length ? (
+            <>
+              <ul className="mt-3 space-y-1 text-[14px]">
+                {cats.map((c) => (
+                  <li key={c.name}>
+                    <Link href={sliceHref(c)} className="group flex items-baseline gap-2" title="Show these transactions">
+                      <span className="shrink-0 group-hover:underline">{c.name}</span>
+                      <span aria-hidden className="min-w-3 flex-1 overflow-hidden whitespace-nowrap text-[var(--text-muted)]">
+                        {". ".repeat(60)}
+                      </span>
+                      <span className="tnum shrink-0">{formatCents(c.totalCents)}</span>
+                      <span className="tnum w-9 shrink-0 text-right text-[12px] text-[var(--text-muted)]">{Math.round(c.share * 100)}%</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-3 flex items-baseline justify-between bg-[var(--text-primary)] px-2.5 py-1.5 text-[14px] font-semibold text-[var(--surface-1)]">
+                <span>Total</span>
+                <span className="tnum">{formatCents(catTotal)}</span>
+              </div>
+            </>
+          ) : (
+            <Empty>No expenses in this period.</Empty>
+          )}
+        </section>
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-12">
+        {/* Month by month */}
+        <Card className="lg:col-span-8" title="Month by month" subtitle="Click a month to open it">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[460px] text-[14px]">
               <thead>
-                <tr className="border-b border-[var(--border)] text-left text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
-                  <th className="pb-1.5 font-medium">Category</th>
-                  <th className="pb-1.5 text-right font-medium">Total</th>
-                  <th className="pb-1.5 text-right font-medium">Share</th>
-                  <th className="pb-1.5 text-right font-medium">n</th>
+                <tr className="text-left text-[12px] text-[var(--text-muted)]">
+                  <th className="pb-1.5 pl-2 font-medium">Month</th>
+                  <th className="pb-1.5 text-right font-medium">In</th>
+                  <th className="pb-1.5 text-right font-medium">Spent</th>
+                  <th className="pb-1.5 text-right font-medium">Saved</th>
+                  <th className="pb-1.5 pr-2 text-right font-medium">Kept</th>
                 </tr>
               </thead>
               <tbody>
-                {cats.map((c) => (
-                  <tr key={c.name} className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--surface-2)]">
-                    <td className="py-1.5">
-                      <Link href={sliceHref(c)} className="block hover:underline" title="Show these transactions">
-                        {c.name}
-                      </Link>
-                    </td>
-                    <td className="tnum py-1.5 text-right">
-                      <Link href={sliceHref(c)} className="block">{formatCents(c.totalCents)}</Link>
-                    </td>
-                    <td className="tnum py-1.5 text-right text-[var(--text-secondary)]">
-                      {Math.round(c.share * 100)}%
-                    </td>
-                    <td className="tnum py-1.5 text-right text-[var(--text-muted)]">{c.count}</td>
-                  </tr>
-                ))}
-                <tr className="font-semibold">
-                  <td className="pt-2">Total</td>
-                  <td className="tnum pt-2 text-right">{formatCents(catTotal)}</td>
-                  <td colSpan={2} />
-                </tr>
+                {[...monthly].reverse().map((m) => {
+                  const net = m.incomeCents - m.expenseCents;
+                  const href = `/transactions?${new URLSearchParams({ from: `${m.month}-01`, to: `${m.month}-31` })}`;
+                  return (
+                    <tr key={m.month} className={`odd:bg-[var(--surface-0)] ${inPeriod(m.month) ? "" : "text-[var(--text-muted)]"}`}>
+                      <td className="py-1 pl-2"><Link href={href} className="hover:underline">{monthName(m.month)}</Link></td>
+                      <td className="tnum py-1 text-right">{formatCents(m.incomeCents)}</td>
+                      <td className="tnum py-1 text-right">{formatCents(m.expenseCents)}</td>
+                      <td className="tnum py-1 text-right">{formatCents(m.savingsCents)}</td>
+                      <td className={`tnum py-1 pr-2 text-right ${net < 0 ? "text-[var(--status-critical)]" : ""}`}>
+                        {net < 0 ? "-" : ""}{formatCents(Math.abs(net))}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
-        ) : (
-          <Empty>No expenses in this period.</Empty>
-        )}
-      </Card>
+        </Card>
 
-      {/* 6. per-account strip ------------------------------------------------ */}
-      <Card title="Accounts" action={<Pill href="/accounts">All accounts</Pill>}>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {accounts.map((a) => (
-            <Link
-              key={a.id}
-              href={drill({ account: String(a.id) })}
-              className="block rounded-lg border border-[var(--border)] p-3 hover:bg-[var(--surface-2)]"
-              title={`Show ${a.name} transactions`}
-            >
-              <div className="flex items-baseline gap-2">
-                <span className="text-[13px] font-medium">{a.name}</span>
-                {a.isPocket && (
-                  <span className="rounded bg-[var(--surface-2)] px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
-                    pocket
-                  </span>
-                )}
-              </div>
-              <div className="tnum mt-1.5 text-[18px] font-semibold leading-none">
-                {a.balanceCents !== null ? formatMoney(a.balanceCents) : <span className="text-[var(--text-muted)]">no data</span>}
-              </div>
-              <div className="mt-1.5 text-[11px] text-[var(--text-muted)]">
-                {a.lastStatement
-                  ? `latest statement ${a.lastStatement}`
-                  : "no statement uploaded"}
-              </div>
-            </Link>
-          ))}
-        </div>
-      </Card>
+        <div className="grid min-w-0 content-start gap-3 lg:col-span-4">
+          <Card className="min-w-0" title="Quick find" subtitle="A merchant, or an amount like ~12.50">
+            <QuickFind
+              from={period.from}
+              to={period.to}
+              initial={merchants[0] ?? ""}
+              examples={[...merchants.slice(1), ">500"]}
+            />
+          </Card>
 
-      {/* 7. needs attention -------------------------------------------------- */}
-      <Card title="Needs attention">
-        <div className="flex flex-wrap gap-2">
-          {flags.needsReview > 0 && (
-            <Pill href="/transactions?review=1" tone="warning">
-              {flags.needsReview} transactions need a category
-            </Pill>
-          )}
-          {flags.unmatchedTransfers > 0 && (
-            <Pill href="/reconcile" tone="warning">
-              {flags.unmatchedTransfers} unmatched transfers
-            </Pill>
-          )}
-          {flags.proposedLinks > 0 && (
-            <Pill href="/reconcile">{flags.proposedLinks} proposed links to confirm</Pill>
-          )}
-          {flags.quarantined > 0 && (
-            <Pill href="/accounts" tone="warning">
-              {flags.quarantined} quarantined statements
-            </Pill>
-          )}
-          {flags.needsReview === 0 && flags.unmatchedTransfers === 0 &&
-            flags.proposedLinks === 0 && flags.quarantined === 0 && (
-              <p className="text-[13px] text-[var(--text-muted)]">Nothing outstanding.</p>
+          <Card
+            title="Subscriptions"
+            subtitle={subs.active.length ? `${formatMoney(subs.monthlyTotalCents)} a month` : undefined}
+            action={<Link href="/subscriptions" className="text-[12px] text-[var(--text-secondary)] hover:underline">All</Link>}
+          >
+            {subs.active.length ? (
+              <ul className="space-y-1 text-[14px]">
+                {subs.active.slice(0, 6).map((s) => (
+                  <li key={s.id}>
+                    <Link href={`/subscriptions/${s.id}`} className="flex items-baseline gap-2 hover:underline">
+                      <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                      {(s.health.kind === "overdue" || s.health.kind === "no_charges") && (
+                        <span className="text-[12px] text-[var(--status-warning)]">check</span>
+                      )}
+                      <span className="tnum text-[var(--text-secondary)]">{formatMoney(s.monthlyCents)}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-[14px] text-[var(--text-secondary)]">
+                Nothing tracked. <Link href="/subscriptions" className="underline">See what repeats.</Link>
+              </p>
             )}
+          </Card>
+
+          <Card title="Loose ends">
+            {looseEnds.length ? (
+              <ul className="space-y-1 text-[14px]">
+                {looseEnds.map((l) => (
+                  <li key={l.href + l.text}>
+                    <Link href={l.href} className="flex items-baseline gap-2 hover:underline">
+                      <span className="tnum w-8 font-semibold text-[var(--status-warning)]">{l.n}</span>
+                      <span>{l.text}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-[14px] text-[var(--text-secondary)]">Nothing outstanding.</p>
+            )}
+          </Card>
         </div>
-      </Card>
+      </div>
+
+      {/* Accounts */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {accounts.map((a) => (
+          <Link
+            key={a.id}
+            href={drill({ account: String(a.id) })}
+            className="card block px-4 py-3 transition-colors hover:bg-[var(--surface-2)]"
+            title={`Show ${a.name} transactions`}
+          >
+            <div className="text-[13px] text-[var(--text-secondary)]">
+              {a.name}{a.isPocket && " (pocket)"}
+            </div>
+            <div className="tnum mt-1 text-[20px] font-semibold leading-none">
+              {a.balanceCents !== null ? formatMoney(a.balanceCents) : <span className="text-[var(--text-muted)]">no data</span>}
+            </div>
+            <div className="mt-1.5 text-[12px] text-[var(--text-muted)]">
+              {a.lastStatement ? `to ${a.lastStatement}` : "no statement uploaded"}
+            </div>
+          </Link>
+        ))}
+      </div>
     </div>
   );
+}
+
+/** A torn bottom edge for the receipt, as a clip-path polygon. */
+function zigzag(teeth: number, depthPx: number): string {
+  const pts = ["0 0", "100% 0"];
+  for (let i = teeth; i >= 0; i--) {
+    pts.push(`${(i / teeth) * 100}% calc(100% - ${i % 2 ? 0 : depthPx}px)`);
+  }
+  return `polygon(${pts.join(", ")})`;
 }

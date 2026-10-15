@@ -551,3 +551,35 @@ export async function deleteSubscription(rawId: number) {
   db.delete(s.subscriptions).where(eq(s.subscriptions.id, id.parse(rawId))).run();
   refresh();
 }
+
+/* ------------------------------------------------------- dashboard search */
+
+/**
+ * The dashboard's type-to-search line. Text that reads as an amount ("~12.50",
+ * ">500") searches by amount; anything else searches descriptions. Read-only.
+ */
+export async function quickSearch(raw: string, rawFrom?: string, rawTo?: string) {
+  const term = z.string().trim().max(100).parse(raw);
+  const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional();
+  const from = day.parse(rawFrom);
+  const to = day.parse(rawTo);
+  if (!term) return { kind: "empty" as const, total: 0, sumCents: 0, rows: [], href: "/transactions" };
+
+  const { parseAmountQuery } = await import("./amount-query");
+  const { listTransactions } = await import("./queries");
+  const byAmount = parseAmountQuery(term) !== null;
+  const filters = { ...(byAmount ? { amount: term } : { q: term }), from, to };
+  const { rows, total, sumCents } = listTransactions({ ...filters, perPage: 3 });
+
+  const params = new URLSearchParams(Object.entries(filters).filter(([, v]) => v) as [string, string][]);
+  return {
+    kind: byAmount ? ("amount" as const) : ("text" as const),
+    total,
+    sumCents,
+    rows: rows.map((r) => ({
+      id: r.id, txnDate: r.txnDate, descriptionRaw: r.descriptionRaw,
+      amountCents: r.amountCents, accountName: r.accountName, categoryName: r.categoryName,
+    })),
+    href: `/transactions?${params}`,
+  };
+}

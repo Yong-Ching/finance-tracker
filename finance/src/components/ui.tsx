@@ -33,9 +33,9 @@ export function Stat({
 }) {
   const body = (
     <div className="px-4 py-3">
-      <div className="text-[11px] uppercase tracking-wide text-[var(--text-muted)]">{label}</div>
+      <div className="text-[13px] text-[var(--text-muted)]">{label}</div>
       <div
-        className={`tnum mt-1 text-[26px] font-semibold leading-none tracking-tight ${
+        className={`tnum mt-1 text-[22px] font-semibold leading-none tracking-tight sm:text-[26px] ${
           tone === "warning" ? "text-[var(--status-warning)]" : ""
         }`}
       >

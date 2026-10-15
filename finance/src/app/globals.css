@@ -2,22 +2,32 @@
 
 /*
   The interface is monochrome; colour belongs to data only. Emphasis reads
-  through weight, rules and inversion - never hue. The only saturated colours on
-  screen are chart series and the three status tokens.
+  through weight, scale and inversion - never hue. The only saturated colours on
+  screen are chart series, the status tokens, and the logo's dot.
+
+  The palette is the logo's: its ground (#111317) and its ring (#E9E6DF). Dark
+  mode uses them as they are; light mode reverses them - ink on paper. Surfaces
+  are told apart by a step in tone, never by an outline.
 */
 
 :root {
   color-scheme: light;
 
-  --surface-0: #f7f7f5;   /* page */
-  --surface-1: #fcfcfb;   /* cards, chart surface */
-  --surface-2: #f0efec;   /* wells, hover */
-  --border:    #e2e1dc;
-  --border-strong: #c9c8c1;
+  /* The logo, fixed in both themes. */
+  --brand-ground: #111317;
+  --brand-ring:   #e9e6df;
+  --brand-dot:    #f2b84b;
 
-  --text-primary:   #0b0b0b;
-  --text-secondary: #52514e;
-  --text-muted:     #86857e;
+  --surface-0: #efede7;   /* page: the ring colour, a shade deeper */
+  --surface-1: #f7f6f2;   /* raised surfaces, chart ground */
+  --surface-2: #e4e1d9;   /* wells, hover */
+  --border:    #d9d6cd;
+  --border-strong: #b9b5aa;
+
+
+  --text-primary:   #111317;
+  --text-secondary: #46474b;
+  --text-muted:     #6c6c6e;
 
   /* categorical slots - fixed order, never cycled */
   --series-1: #2a78d6;  /* blue    - income */
@@ -36,15 +46,15 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --surface-0: #131312;
-    --surface-1: #1a1a19;
-    --surface-2: #242422;
-    --border:    #33332f;
-    --border-strong: #4a4a45;
+    --surface-0: #111317;
+    --surface-1: #181b20;
+    --surface-2: #22262c;
+    --border:    #2c3037;
+    --border-strong: #454a52;
 
-    --text-primary:   #ffffff;
-    --text-secondary: #c3c2b7;
-    --text-muted:     #8a897f;
+    --text-primary:   #e9e6df;
+    --text-secondary: #b9b6ae;
+    --text-muted:     #8d8b85;
 
     --series-1: #3987e5;
     --series-2: #d95926;
@@ -62,14 +72,14 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --surface-0: #131312;
-  --surface-1: #1a1a19;
-  --surface-2: #242422;
-  --border:    #33332f;
-  --border-strong: #4a4a45;
-  --text-primary:   #ffffff;
-  --text-secondary: #c3c2b7;
-  --text-muted:     #8a897f;
+  --surface-0: #111317;
+  --surface-1: #181b20;
+  --surface-2: #22262c;
+  --border:    #2c3037;
+  --border-strong: #454a52;
+  --text-primary:   #e9e6df;
+  --text-secondary: #b9b6ae;
+  --text-muted:     #8d8b85;
   --series-1: #3987e5;
   --series-2: #d95926;
   --series-3: #199e70;
@@ -99,26 +109,30 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+
 /* Tabular figures wherever numbers are compared down a column. */
 .tnum { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
 
 .card {
   background: var(--surface-1);
-  border: 1px solid var(--border);
   border-radius: 10px;
 }
 
-/* Hatching marks money that left but cannot be itemised. */
+/* Hatching marks money that left but cannot be itemised. It is data, not ornament. */
 .hatch {
-  background-image: repeating-linear-gradient(
+  background-image: repeating-linear-gradient( /* taste-skill-ignore */
     45deg, transparent, transparent 3px,
     color-mix(in srgb, var(--text-muted) 45%, transparent) 3px,
     color-mix(in srgb, var(--text-muted) 45%, transparent) 4px
   );
 }
 
-input, select, textarea, button { font: inherit; }
+@layer base {
+  input, select, textarea, button { font: inherit; }
+}
 input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible {
   outline: 2px solid var(--text-primary);
   outline-offset: 1px;
 }
+
+/* Entrances: content is visible without script or with reduced motion. */

@@ -5,7 +5,7 @@ import * as s from "@/db/schema";
 import type { Period } from "./period";
 import { parseAmountQuery } from "./amount-query";
 import {
-  assess, detectCandidates, matches, monthlyCents, timeline,
+  assess, detectCandidates, matches, merchantKey, monthlyCents, timeline,
   type Candidate, type ChargeRow, type SubscriptionState, type TimelineEntry,
 } from "./subscriptions";
 
@@ -766,4 +766,28 @@ export function subscriptionDetail(subscriptionId: number): SubscriptionDetail |
     paidCents,
     averageCents: sub.charges.length ? Math.round(paidCents / sub.charges.length) : 0,
   };
+}
+
+/** The merchants paid most often in a period - real starting points for the dashboard search. */
+export function topMerchants(p: Period, n = 3): string[] {
+  const rows = db
+    .select({ d: s.transactions.descriptionRaw })
+    .from(s.transactions)
+    .where(and(inPeriod(p), inArray(s.transactions.txnType, ["expense", "debt_repayment"])))
+    .all();
+  // Bank boilerplate in front of the merchant is not something anyone searches for.
+  const prefix = /^(DEBIT CARD TRANSACTION|POINT OF SALE TRANSACTION|ADVICE POINT OF SALE|NETS QR)\s+/;
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    // One clean word when it is distinctive enough ("STREAMCO", "BAKERY-TOWN" -> "BAKERY"), else two.
+    const words = merchantKey(r.d).replace(prefix, "").split(" ").map((w) => w.split("-")[0].replace(/[^A-Z0-9/&.']+$/, ""));
+    const k = (words[0]?.length >= 4 ? words.slice(0, 1) : words.slice(0, 2)).join(" ").replace(/[*.\s]+$/, "");
+    if (k.length >= 3) counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  // Keep only terms a plain description search actually finds.
+  return [...counts]
+    .sort((a, b) => b[1] - a[1])
+    .map(([k]) => k)
+    .filter((k) => listTransactions({ q: k, from: p.from, to: p.to, perPage: 1 }).total > 0)
+    .slice(0, n);
 }

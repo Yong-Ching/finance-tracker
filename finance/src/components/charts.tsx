@@ -21,7 +21,7 @@ const k = (cents: number) => {
 
 function TooltipBox({ title, rows }: { title: string; rows: Array<{ label: string; value: string; color?: string }> }) {
   return (
-    <div className="card px-3 py-2 text-[12px] shadow-lg">
+    <div className="card px-3 py-2 text-[13px] shadow-lg">{/* taste-skill-ignore: a floating tooltip */}
       <div className="mb-1 font-medium">{title}</div>
       {rows.map((r) => (
         <div key={r.label} className="flex items-center gap-2">
@@ -119,10 +119,12 @@ export function MonthlyBuckets({ data }: { data: MonthDatum[] }) {
 
 /* ------------------------------------------------------- balance, 1 line --- */
 
-export function BalanceLine({ data }: { data: Array<{ date: string; balanceCents: number }> }) {
+export function BalanceLine({
+  data, height = 200,
+}: { data: Array<{ date: string; balanceCents: number }>; height?: number }) {
   const router = useRouter();
   return (
-    <ResponsiveContainer width="100%" height={200}>
+    <ResponsiveContainer width="100%" height={height}>
       <LineChart
         data={data}
         margin={{ top: 6, right: 8, bottom: 0, left: -4 }}
