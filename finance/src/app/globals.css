@@ -136,3 +136,13 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
 }
 
 /* Entrances: content is visible without script or with reduced motion. */
+
+/*
+  Hidden figures (the eye toggle): each <Fig> shows asterisks in place of its
+  value. Scoped to .hideable so pages without the toggle never hide anything.
+*/
+:root[data-figures="hidden"] .hideable .fig > span { display: none; }
+:root[data-figures="hidden"] .hideable .fig::after { content: "****"; }
+.figures-toggle .when-hidden,
+:root[data-figures="hidden"] .figures-toggle .when-shown { display: none; }
+:root[data-figures="hidden"] .figures-toggle .when-hidden { display: block; }

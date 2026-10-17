@@ -8,7 +8,9 @@ import {
 import { BalanceLine } from "@/components/charts";
 import { PeriodPicker } from "@/components/PeriodPicker";
 import { QuickFind } from "@/components/DashboardLive";
+import { FiguresToggle } from "@/components/FiguresToggle";
 import { Card, Stat, Empty } from "@/components/ui";
+import { Fig } from "@/components/Fig";
 
 export const dynamic = "force-dynamic";
 
@@ -72,13 +74,16 @@ export default async function Dashboard({
   ].filter(Boolean) as { n: number; text: string; href: string }[];
 
   return (
-    <div className="space-y-3">
+    <div className="hideable space-y-3">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <h1 className="text-[15px] font-semibold">{period.label}</h1>
         <span className="text-[13px] text-[var(--text-muted)]">
           {t.count} transactions &middot; every figure opens what is behind it
         </span>
-        <div className="ml-auto"><PeriodPicker months={months} value={period.key} /></div>
+        <div className="ml-auto flex items-center gap-2">
+          <FiguresToggle />
+          <PeriodPicker months={months} value={period.key} />
+        </div>
       </div>
 
       {/* Totals, plus the money no statement accounts for yet */}
@@ -100,7 +105,7 @@ export default async function Dashboard({
           <div className="hatch w-1.5 shrink-0 rounded-sm" aria-hidden />
           <div>
             <div className="text-[13px] text-[var(--text-muted)]">Unaccounted</div>
-            <div className="tnum mt-1 text-[24px] font-semibold leading-none tracking-tight">{formatMoney(t.unaccountedCents)}</div>
+            <div className="tnum mt-1 text-[24px] font-semibold leading-none tracking-tight"><Fig>{formatMoney(t.unaccountedCents)}</Fig></div>
             <div className="mt-1.5 text-[12px] text-[var(--text-muted)]">in pockets, not in Expenses</div>
           </div>
         </Link>
@@ -131,7 +136,7 @@ export default async function Dashboard({
                       <span aria-hidden className="min-w-3 flex-1 overflow-hidden whitespace-nowrap text-[var(--text-muted)]">
                         {". ".repeat(60)}
                       </span>
-                      <span className="tnum shrink-0">{formatCents(c.totalCents)}</span>
+                      <span className="tnum shrink-0"><Fig>{formatCents(c.totalCents)}</Fig></span>
                       <span className="tnum w-9 shrink-0 text-right text-[12px] text-[var(--text-muted)]">{Math.round(c.share * 100)}%</span>
                     </Link>
                   </li>
@@ -139,7 +144,7 @@ export default async function Dashboard({
               </ul>
               <div className="mt-3 flex items-baseline justify-between bg-[var(--text-primary)] px-2.5 py-1.5 text-[14px] font-semibold text-[var(--surface-1)]">
                 <span>Total</span>
-                <span className="tnum">{formatCents(catTotal)}</span>
+                <span className="tnum"><Fig>{formatCents(catTotal)}</Fig></span>
               </div>
             </>
           ) : (
@@ -169,11 +174,11 @@ export default async function Dashboard({
                   return (
                     <tr key={m.month} className={`odd:bg-[var(--surface-0)] ${inPeriod(m.month) ? "" : "text-[var(--text-muted)]"}`}>
                       <td className="py-1 pl-2"><Link href={href} className="hover:underline">{monthName(m.month)}</Link></td>
-                      <td className="tnum py-1 text-right">{formatCents(m.incomeCents)}</td>
-                      <td className="tnum py-1 text-right">{formatCents(m.expenseCents)}</td>
-                      <td className="tnum py-1 text-right">{formatCents(m.savingsCents)}</td>
+                      <td className="tnum py-1 text-right"><Fig>{formatCents(m.incomeCents)}</Fig></td>
+                      <td className="tnum py-1 text-right"><Fig>{formatCents(m.expenseCents)}</Fig></td>
+                      <td className="tnum py-1 text-right"><Fig>{formatCents(m.savingsCents)}</Fig></td>
                       <td className={`tnum py-1 pr-2 text-right ${net < 0 ? "text-[var(--status-critical)]" : ""}`}>
-                        {net < 0 ? "-" : ""}{formatCents(Math.abs(net))}
+                        <Fig>{net < 0 ? "-" : ""}{formatCents(Math.abs(net))}</Fig>
                       </td>
                     </tr>
                   );
@@ -195,7 +200,7 @@ export default async function Dashboard({
 
           <Card
             title="Subscriptions"
-            subtitle={subs.active.length ? `${formatMoney(subs.monthlyTotalCents)} a month` : undefined}
+            subtitle={subs.active.length ? <><Fig>{formatMoney(subs.monthlyTotalCents)}</Fig> a month</> : undefined}
             action={<Link href="/subscriptions" className="text-[12px] text-[var(--text-secondary)] hover:underline">All</Link>}
           >
             {subs.active.length ? (
@@ -207,7 +212,7 @@ export default async function Dashboard({
                       {(s.health.kind === "overdue" || s.health.kind === "no_charges") && (
                         <span className="text-[12px] text-[var(--status-warning)]">check</span>
                       )}
-                      <span className="tnum text-[var(--text-secondary)]">{formatMoney(s.monthlyCents)}</span>
+                      <span className="tnum text-[var(--text-secondary)]"><Fig>{formatMoney(s.monthlyCents)}</Fig></span>
                     </Link>
                   </li>
                 ))}
@@ -251,7 +256,7 @@ export default async function Dashboard({
               {a.name}{a.isPocket && " (pocket)"}
             </div>
             <div className="tnum mt-1 text-[20px] font-semibold leading-none">
-              {a.balanceCents !== null ? formatMoney(a.balanceCents) : <span className="text-[var(--text-muted)]">no data</span>}
+              {a.balanceCents !== null ? <Fig>{formatMoney(a.balanceCents)}</Fig> : <span className="text-[var(--text-muted)]">no data</span>}
             </div>
             <div className="mt-1.5 text-[12px] text-[var(--text-muted)]">
               {a.lastStatement ? `to ${a.lastStatement}` : "no statement uploaded"}

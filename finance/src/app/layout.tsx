@@ -23,10 +23,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Stamp the saved theme before first paint, so there is no flash. */}
+        {/* Stamp the saved theme and figure hiding before first paint, so neither flashes. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var t=localStorage.getItem('theme');if(t)document.documentElement.setAttribute('data-theme',t)}catch(e){}`,
+            __html: `try{var t=localStorage.getItem('theme');if(t)document.documentElement.setAttribute('data-theme',t);if(localStorage.getItem('figures')==='hidden')document.documentElement.setAttribute('data-figures','hidden')}catch(e){}`,
           }}
         />
       </head>

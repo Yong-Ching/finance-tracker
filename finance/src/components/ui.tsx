@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { formatMoney } from "@/lib/money";
+import { Fig } from "@/components/Fig";
 
 export function Card({
   title, subtitle, action, children, className = "",
 }: {
-  title?: string; subtitle?: string; action?: React.ReactNode;
+  title?: string; subtitle?: React.ReactNode; action?: React.ReactNode;
   children: React.ReactNode; className?: string;
 }) {
   return (
@@ -39,12 +40,12 @@ export function Stat({
           tone === "warning" ? "text-[var(--status-warning)]" : ""
         }`}
       >
-        {formatMoney(cents)}
+        <Fig>{formatMoney(cents)}</Fig>
       </div>
       <div className="mt-1.5 flex items-center gap-2 text-[11px] text-[var(--text-muted)]">
         {delta !== undefined && delta !== null && (
           <span className="tnum">
-            {delta >= 0 ? "+" : "-"}{formatMoney(Math.abs(delta))} vs prior
+            {delta >= 0 ? "+" : "-"}<Fig>{formatMoney(Math.abs(delta))}</Fig> vs prior
           </span>
         )}
         {hint && <span>{hint}</span>}

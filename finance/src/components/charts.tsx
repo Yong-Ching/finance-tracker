@@ -6,7 +6,9 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { formatCents } from "@/lib/money";
+import { useFiguresHidden } from "@/components/FiguresToggle";
 
+const MASK = "****";
 const AXIS = { fill: "var(--text-muted)", fontSize: 11 };
 const GRID = "var(--grid)";
 
@@ -123,6 +125,7 @@ export function BalanceLine({
   data, height = 200,
 }: { data: Array<{ date: string; balanceCents: number }>; height?: number }) {
   const router = useRouter();
+  const hidden = useFiguresHidden();
   return (
     <ResponsiveContainer width="100%" height={height}>
       <LineChart
@@ -140,7 +143,7 @@ export function BalanceLine({
           tickFormatter={(d: string) =>
             new Date(`${d}T00:00:00Z`).toLocaleDateString("en-SG", { day: "numeric", month: "short", timeZone: "UTC" })}
         />
-        <YAxis tickFormatter={k} tick={AXIS} tickLine={false} axisLine={false} width={56} domain={["dataMin - 20000", "dataMax + 20000"]} />
+        <YAxis tickFormatter={(c: number) => (hidden ? MASK : k(c))} tick={AXIS} tickLine={false} axisLine={false} width={56} domain={["dataMin - 20000", "dataMax + 20000"]} />
         <Tooltip
           cursor={{ stroke: "var(--border-strong)", strokeWidth: 1 }}
           content={({ active, payload, label }) =>
@@ -149,7 +152,7 @@ export function BalanceLine({
                 title={new Date(`${label}T00:00:00Z`).toLocaleDateString("en-SG", {
                   day: "numeric", month: "long", year: "numeric", timeZone: "UTC",
                 })}
-                rows={[{ label: "Balance", value: formatCents(Number(payload[0].value)), color: "var(--series-1)" }]}
+                rows={[{ label: "Balance", value: hidden ? MASK : formatCents(Number(payload[0].value)), color: "var(--series-1)" }]}
               />
             ) : null
           }

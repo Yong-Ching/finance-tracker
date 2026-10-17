@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 import { quickSearch } from "@/lib/actions";
 import { formatMoney } from "@/lib/money";
+import { Fig } from "@/components/Fig";
 
 type Result = Awaited<ReturnType<typeof quickSearch>>;
 
@@ -67,12 +68,12 @@ export function QuickFind({
                   <li key={r.id} className="flex items-baseline gap-2">
                     <span className="tnum shrink-0 text-[12px] text-[var(--text-muted)]">{r.txnDate.slice(5)}</span>
                     <span className="min-w-0 flex-1 truncate">{r.descriptionRaw}</span>
-                    <span className="tnum shrink-0">{formatMoney(r.amountCents)}</span>
+                    <span className="tnum shrink-0"><Fig>{formatMoney(r.amountCents)}</Fig></span>
                   </li>
                 ))}
               </ul>
               <Link href={result.href} className="mt-1.5 inline-block text-[13px] text-[var(--text-secondary)] hover:underline">
-                {result.total} match{result.total === 1 ? "" : "es"}, {formatMoney(Math.abs(result.sumCents))}{" "}
+                {result.total} match{result.total === 1 ? "" : "es"}, <Fig>{formatMoney(Math.abs(result.sumCents))}</Fig>{" "}
                 {result.sumCents < 0 ? "out" : "in"} &rarr;
               </Link>
             </>
