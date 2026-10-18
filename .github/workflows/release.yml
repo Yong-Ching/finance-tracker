@@ -1,0 +1,71 @@
+name: Release
+
+# Publishes the macOS app for other people to install. To release, from desktop/:
+#
+#   npm run release -- patch     (or minor, major; see scripts/release.js)
+#
+# which bumps the version, commits, and pushes an annotated tag v1.2.3 whose
+# message is the release notes. This builds Finance Tracker for Apple Silicon
+# and Intel and attaches to a GitHub Release:
+#
+#   Finance-Tracker-<v>-<arch>.dmg   first installs
+#   Finance-Tracker-<v>-<arch>.zip   what the in-app updater downloads
+#   SHA256SUMS                       what it checks the zip against
+#
+# It publishes only once everything is uploaded, so the in-app update check
+# never offers a release whose download is not there yet.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            desktop/package-lock.json
+            finance/package-lock.json
+
+      - name: Install the desktop shell
+        working-directory: desktop
+        run: npm ci
+
+      # The app reports package.json's version, and the update check compares
+      # the tag against it: if they differ, an installed app would offer the
+      # same update forever. scripts/release.js keeps them in step.
+      - name: Check the tag matches the version
+        working-directory: desktop
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME but desktop/package.json says $version. Release with npm run release."
+            exit 1
+          fi
+
+      # checkout leaves the tag lightweight; fetch it again for its message.
+      - name: Read the release notes from the tag
+        run: |
+          git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          git tag --list --format='%(contents)' "$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md"
+
+      - name: Build the DMGs and update zips
+        working-directory: desktop
+        run: npm run dist
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --draft --title "Finance Tracker ${GITHUB_REF_NAME#v}" --notes-file "$RUNNER_TEMP/notes.md"
+          gh release upload "$GITHUB_REF_NAME" desktop/dist-release/*.dmg desktop/dist-release/*.zip desktop/dist-release/SHA256SUMS
+          gh release edit "$GITHUB_REF_NAME" --draft=false

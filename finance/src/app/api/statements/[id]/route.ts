@@ -3,6 +3,7 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import * as s from "@/db/schema";
+import { DATA_DIR, FILES_ROOT } from "@/lib/paths";
 
 export const runtime = "nodejs";
 
@@ -24,8 +25,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     .get();
   if (!st?.storedPath) return new Response("No stored file for this statement", { status: 404 });
 
-  const root = path.resolve(process.cwd(), "data", "statements");
-  const file = path.resolve(process.cwd(), st.storedPath);
+  const root = path.resolve(DATA_DIR, "statements");
+  const file = path.resolve(FILES_ROOT, st.storedPath);
   if (!file.startsWith(root + path.sep)) return new Response("Not a statement file", { status: 403 });
   if (!fs.existsSync(file)) return new Response("Statement file is missing", { status: 404 });
 

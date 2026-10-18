@@ -27,7 +27,38 @@ desktop/    optional macOS app that opens it with a double-click
 
 ---
 
-## Setup
+## Install the app (macOS)
+
+No Node, git or setup needed.
+
+1. Open the [latest release](https://github.com/Yong-Ching/finance-tracker/releases/latest)
+   and download the DMG for your Mac: `arm64` for Apple Silicon (M1 and later),
+   `x64` for Intel. Not sure? Apple menu → **About This Mac** → *Chip*.
+2. Open the DMG and drag **Finance Tracker** into **Applications**.
+3. The first time only: open it, and when macOS says it can't verify the app,
+   click **Done**. Then go to **System Settings → Privacy & Security**, scroll
+   down to *"Finance Tracker" was blocked*, and click **Open Anyway**. (The app
+   isn't signed with a paid Apple developer certificate, so macOS asks once.)
+
+### Updating
+
+The app checks for a new version each time it opens, and from **Finance Tracker
+→ Check for Updates…**. When one is out, click **Update and Restart**: it
+downloads the new version, replaces itself and reopens, in a minute or so. Your
+data is kept: it lives outside the app, in `~/Library/Application Support/Finance Tracker/`.
+
+### Settings
+
+**Data → Edit Settings…** opens a settings file where you can add a Claude API
+key to turn on the Review page (see step 5 below for what that does). Restart
+the app after editing. **Data → Show Data Folder** shows your database and
+stored statements; copy that folder while the app is closed to back it up.
+
+---
+
+## Run from source
+
+For changing the code, or running on Linux or Windows.
 
 ### 1. Install the prerequisites
 
@@ -174,6 +205,9 @@ month and per year.
 
 ## Your data
 
+When running from source (the installed app keeps the same files in
+`~/Library/Application Support/Finance Tracker/`):
+
 | What                    | Where                                      |
 | ----------------------- | ------------------------------------------ |
 | Database                | `finance/data/sqlite.db`                   |
@@ -184,7 +218,7 @@ month and per year.
 All of these are gitignored. To back up, copy the `finance/data/` folder while
 the app is closed.
 
-## Updating to a new version
+## Updating a source checkout
 
 ```sh
 git pull
@@ -211,6 +245,12 @@ you only need `git pull` and, if dependencies changed, `npm install`.
 
 [finance/README.md](finance/README.md) explains how the app works and where
 things live. Adding a new bank means one parser file in `src/lib/parsers/`.
+
+To publish a new version of the installable app, run
+`npm run release -- patch` (or `minor`, `major`) in `desktop/`. It bumps the
+version, asks for release notes, and pushes a tag; the release workflow builds
+and publishes it, and installed apps offer the update on their next launch.
+[desktop/README.md](desktop/README.md) covers building one locally.
 
 ```sh
 cd finance

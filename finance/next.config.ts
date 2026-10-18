@@ -11,6 +11,18 @@ const nextConfig: NextConfig = {
    * entry here.
    */
   serverExternalPackages: ["pdfjs-dist"],
+
+  /**
+   * The packaged desktop app (desktop/scripts/stage-server.js) ships a
+   * self-contained server. Only that build asks for it, so `next start` here
+   * keeps working as before.
+   */
+  output: process.env.FINANCE_STANDALONE ? "standalone" : undefined,
+  // The same worker, for that build: it is loaded by path at runtime, so file
+  // tracing cannot see it, and without it every upload fails.
+  outputFileTracingIncludes: {
+    "/**": ["./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"],
+  },
 };
 
 export default nextConfig;

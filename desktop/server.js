@@ -95,8 +95,8 @@ function fingerprint(projectDir) {
   return `${Math.floor(newest)}:${count}`;
 }
 
-function migrationsHash(projectDir) {
-  const journal = path.join(projectDir, "drizzle", "meta", "_journal.json");
+function migrationsHash(migrationsDir) {
+  const journal = path.join(migrationsDir, "meta", "_journal.json");
   try {
     return crypto.createHash("sha1").update(fs.readFileSync(journal)).digest("hex");
   } catch {
@@ -134,6 +134,9 @@ class FinanceServer {
    */
   constructor(opts) {
     Object.assign(this, opts);
+    this.dataDir = path.join(this.projectDir, "data");
+    this.migrationsDir = path.join(this.projectDir, "drizzle");
+    this.preferredPort = 3417;
     this.child = null;
     this.stopping = false;
   }
@@ -183,13 +186,13 @@ class FinanceServer {
   // Applies pending drizzle migrations, but only when the migration journal has
   // changed since the last launch - and takes a backup of the database first.
   async migrateIfNeeded() {
-    const hash = migrationsHash(this.projectDir);
+    const hash = migrationsHash(this.migrationsDir);
     if (!hash || hash === this.state.migrationsHash) return;
 
-    const db = path.join(this.projectDir, "data", "sqlite.db");
+    const db = path.join(this.dataDir, "sqlite.db");
     if (fs.existsSync(db)) {
       this.onStatus("Backing up database before migrating");
-      const dir = path.join(this.projectDir, "data", "backups");
+      const dir = path.join(this.dataDir, "backups");
       fs.mkdirSync(dir, { recursive: true });
       const stamp = new Date().toISOString().replace(/[:.]/g, "-");
       const dest = path.join(dir, `sqlite-${stamp}.db`);
@@ -199,14 +202,18 @@ class FinanceServer {
           err ? reject(err) : resolve(),
         ),
       );
-      this.log(`database backed up to ${path.relative(this.projectDir, dest)}\n`);
+      this.log(`database backed up to ${path.relative(this.dataDir, dest)}\n`);
     }
 
     this.onStatus("Applying database migrations");
-    const tsx = path.join(this.projectDir, "node_modules", "tsx", "dist", "cli.mjs");
-    await this.run([tsx, "scripts/migrate.ts"], "migrate");
+    await this.migrate();
     this.state.migrationsHash = hash;
     this.saveState(this.state);
+  }
+
+  migrate() {
+    const tsx = path.join(this.projectDir, "node_modules", "tsx", "dist", "cli.mjs");
+    return this.run([tsx, "scripts/migrate.ts"], "migrate");
   }
 
   async buildIfStale() {
@@ -227,19 +234,15 @@ class FinanceServer {
     await this.migrateIfNeeded();
     if (mode === "production") await this.buildIfStale();
 
-    const port = await freePort(this.state.port || 3417);
+    const port = await freePort(this.state.port || this.preferredPort);
     const url = `http://127.0.0.1:${port}`;
     this.onStatus(mode === "dev" ? "Starting live-reload server" : "Starting");
 
-    const cmd = mode === "dev" ? "dev" : "start";
-    this.log(`\n$ next ${cmd} -p ${port}\n`);
+    const { args, env } = this.serverCommand(mode, port);
+    this.log(`\n$ ${args.map((a) => path.basename(a)).join(" ")}\n`);
     // detached: the child leads its own process group, so stop() can take down
     // everything Next spawns, not just the top process.
-    const child = spawn(this.node, [this.nextBin(), cmd, "-H", "127.0.0.1", "-p", String(port)], {
-      cwd: this.projectDir,
-      env: this.env,
-      detached: true,
-    });
+    const child = spawn(this.node, args, { cwd: this.projectDir, env, detached: true });
     this.child = child;
     this.stopping = false;
     child.stdout.on("data", (d) => this.log(d.toString()));
@@ -251,6 +254,11 @@ class FinanceServer {
 
     await waitForHttp(url, child);
     return url;
+  }
+
+  serverCommand(mode, port) {
+    const cmd = mode === "dev" ? "dev" : "start";
+    return { args: [this.nextBin(), cmd, "-H", "127.0.0.1", "-p", String(port)], env: this.env };
   }
 
   stop() {
@@ -275,4 +283,75 @@ class FinanceServer {
   }
 }
 
-module.exports = { FinanceServer, fingerprint };
+/**
+ * The release app: runs the server shipped inside the .app (see
+ * scripts/stage-server.js) on Electron's own Node, with the data in the user's
+ * Library folder. Nothing here needs Node, npm or the source on the machine.
+ */
+class BundledServer extends FinanceServer {
+  /**
+   * @param {object} opts  as FinanceServer, but instead of projectDir:
+   * @param {string} opts.serverDir      Resources/server, holding server.js
+   * @param {string} opts.migrationsDir  Resources/drizzle
+   * @param {string} opts.dataDir        where the database and statements live
+   * @param {string} opts.envFile        optional KEY=value settings (API key)
+   */
+  constructor(opts) {
+    super({ ...opts, projectDir: opts.serverDir });
+    this.dataDir = opts.dataDir;
+    this.migrationsDir = opts.migrationsDir;
+    // Not the development app's port, so both can run at once.
+    this.preferredPort = 3418;
+  }
+
+  async prepare() {
+    fs.mkdirSync(path.dirname(this.logFile), { recursive: true });
+    fs.writeFileSync(this.logFile, `--- ${new Date().toISOString()} ---\n`);
+    fs.mkdirSync(this.dataDir, { recursive: true });
+    this.node = process.execPath;
+    this.env = {
+      ...process.env,
+      ...readEnvFile(this.envFile),
+      ELECTRON_RUN_AS_NODE: "1",
+      NODE_ENV: "production",
+      FINANCE_DATA_DIR: this.dataDir,
+      FINANCE_MIGRATIONS: this.migrationsDir,
+      NEXT_TELEMETRY_DISABLED: "1",
+    };
+  }
+
+  // Seeding after every migration is safe: it only adds what is missing. On a
+  // first launch it creates the accounts and starter categories and rules.
+  async migrate() {
+    await this.run(["scripts/migrate.js"], "migrate");
+    await this.run(["scripts/seed.js"], "seed");
+  }
+
+  // Shipped already built.
+  async buildIfStale() {}
+
+  serverCommand(_mode, port) {
+    return {
+      args: [path.join(this.projectDir, "server.js")],
+      env: { ...this.env, PORT: String(port), HOSTNAME: "127.0.0.1" },
+    };
+  }
+}
+
+/** KEY=value lines; blank lines and # comments ignored, surrounding quotes dropped. */
+function readEnvFile(file) {
+  let text;
+  try {
+    text = fs.readFileSync(file, "utf8");
+  } catch {
+    return {};
+  }
+  const env = {};
+  for (const line of text.split(/\r?\n/)) {
+    const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/.exec(line);
+    if (m) env[m[1]] = m[2].replace(/^(["'])(.*)\1$/, "$2");
+  }
+  return env;
+}
+
+module.exports = { FinanceServer, BundledServer, fingerprint };

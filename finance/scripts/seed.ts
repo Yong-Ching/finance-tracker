@@ -18,6 +18,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { eq } from "drizzle-orm";
 import { openDb, schema } from "../src/db/raw";
+import { DATA_DIR } from "../src/lib/paths";
 import { fromFloat } from "../src/lib/money";
 import type { Bucket, TxnType } from "../src/db/schema";
 
@@ -298,7 +299,7 @@ function main() {
   // full description text; write them to a staging file it can read.
   if (labels) {
     fs.writeFileSync(
-      path.join(process.cwd(), "data", "legacy-one-offs.json"),
+      path.join(DATA_DIR, "legacy-one-offs.json"),
       JSON.stringify(oneOffs, null, 2),
     );
   }

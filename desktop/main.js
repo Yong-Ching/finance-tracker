@@ -1,13 +1,25 @@
 // Electron shell for finance/. The window is just a browser pointed at the
 // local Next server that server.js starts; all app logic lives in finance/.
+//
+// It is built two ways. `npm run install-app` makes the development app, which
+// runs the live finance/ folder on the system Node. `npm run dist` makes the
+// release app, which carries its own server in Resources/server and keeps its
+// data in ~/Library/Application Support; that is the one other people install.
 
 const { app, BrowserWindow, Menu, dialog, shell, nativeTheme } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
-const { FinanceServer } = require("./server");
+const { FinanceServer, BundledServer } = require("./server");
+const { checkForUpdates } = require("./updates");
 
 const STATE_FILE = path.join(app.getPath("userData"), "settings.json");
 const LOG_FILE = path.join(app.getPath("userData"), "logs", "server.log");
+
+// Present only in the release app.
+const BUNDLED_SERVER = app.isPackaged ? path.join(process.resourcesPath, "server") : null;
+const BUNDLED = !!BUNDLED_SERVER && fs.existsSync(path.join(BUNDLED_SERVER, "server.js"));
+const DATA_DIR = path.join(app.getPath("userData"), "data");
+const ENV_FILE = path.join(app.getPath("userData"), "settings.env");
 
 function loadState() {
   try {
@@ -27,6 +39,7 @@ let win = null;
 let server = null;
 let appUrl = null;
 let quitting = false;
+let checkedForUpdates = false;
 
 // ---- Where finance/ lives -------------------------------------------------
 //
@@ -88,7 +101,7 @@ function createWindow() {
     ...b,
     minWidth: 480,
     minHeight: 400,
-    title: "finance-tracker",
+    title: app.name,
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#0b0b0b" : "#ffffff",
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
@@ -133,40 +146,56 @@ function createWindow() {
 // ---- Server lifecycle -----------------------------------------------------
 
 async function boot() {
-  const projectDir = resolveProjectDir() || (await chooseProjectDir());
-  if (!projectDir) return app.quit();
+  const projectDir = BUNDLED ? null : resolveProjectDir() || (await chooseProjectDir());
+  if (!BUNDLED && !projectDir) return app.quit();
+  const dev = !BUNDLED && state.mode === "dev";
 
   appUrl = null;
   await win.loadFile(path.join(__dirname, "splash.html"));
-  send("setMode", state.mode === "dev" ? "Live-reload mode" : "");
+  send("setMode", dev ? "Live-reload mode" : "");
 
-  server = new FinanceServer({
-    projectDir,
+  const common = {
     logFile: LOG_FILE,
     state,
     saveState,
     onStatus: (msg) => send("setStatus", msg),
     onLog: (chunk) => send("appendLog", chunk),
     onUnexpectedExit: onServerCrash,
-  });
+  };
+  server = BUNDLED
+    ? new BundledServer({
+        ...common,
+        serverDir: BUNDLED_SERVER,
+        migrationsDir: path.join(process.resourcesPath, "drizzle"),
+        dataDir: DATA_DIR,
+        envFile: ENV_FILE,
+      })
+    : new FinanceServer({ ...common, projectDir });
 
   try {
-    appUrl = await server.start(state.mode === "dev" ? "dev" : "production");
+    appUrl = await server.start(dev ? "dev" : "production");
     await win.loadURL(appUrl);
   } catch (err) {
     await onStartFailure(err);
   }
   buildMenu();
+
+  // Once per launch, after the window is up, so a slow network never delays it.
+  if (BUNDLED && appUrl && !checkedForUpdates) {
+    checkedForUpdates = true;
+    checkForUpdates({ win, state, saveState, interactive: false });
+  }
 }
 
 async function onStartFailure(err) {
   send("setStatus", "Could not start");
   send("showLog", true);
-  const inDev = state.mode === "dev";
+  // The release app has no source to live-reload; it only offers the log.
+  const inDev = BUNDLED || state.mode === "dev";
   const buttons = inDev ? ["Retry", "Show Log File", "Quit"] : ["Retry", "Open in Live-Reload Mode", "Quit"];
   const { response } = await dialog.showMessageBox(win, {
     type: "error",
-    message: "finance-tracker could not start",
+    message: `${app.name} could not start`,
     detail: `${err.message}\n\nThe output is shown in the window behind this message.`,
     buttons,
     defaultId: 0,
@@ -212,8 +241,54 @@ async function restart({ forceBuild = false } = {}) {
 // ---- Menu -----------------------------------------------------------------
 
 function buildMenu() {
+  const appMenu = {
+    label: app.name,
+    submenu: [
+      { role: "about" },
+      ...(BUNDLED
+        ? [{ label: "Check for Updates…", click: () => checkForUpdates({ win, state, saveState, interactive: true }) }]
+        : []),
+      { type: "separator" },
+      { role: "services" },
+      { type: "separator" },
+      { role: "hide" },
+      { role: "hideOthers" },
+      { role: "unhide" },
+      { type: "separator" },
+      { role: "quit" },
+    ],
+  };
+
+  // The release app has no source folder or build to manage; it gets the parts
+  // of Develop that still mean something.
+  const dataMenu = {
+    label: "Data",
+    submenu: [
+      { label: "Show Data Folder", click: () => shell.openPath(DATA_DIR) },
+      {
+        label: "Edit Settings…",
+        click: () => {
+          if (!fs.existsSync(ENV_FILE)) {
+            fs.writeFileSync(
+              ENV_FILE,
+              "# Optional. Restart the app after editing.\n" +
+                "# A Claude API key turns on the Review page; everything else works without it.\n" +
+                "ANTHROPIC_API_KEY=\n" +
+                "# Your name as it appears on statements, masked out of text sent for review.\n" +
+                "FINANCE_OWNER_NAMES=\n",
+            );
+          }
+          shell.openPath(ENV_FILE);
+        },
+      },
+      { type: "separator" },
+      { label: "Open in Browser", enabled: !!appUrl, click: () => appUrl && shell.openExternal(appUrl) },
+      { label: "Show Server Log", click: () => shell.showItemInFolder(LOG_FILE) },
+    ],
+  };
+
   const template = [
-    { role: "appMenu" },
+    appMenu,
     { role: "editMenu" },
     {
       label: "View",
@@ -228,7 +303,7 @@ function buildMenu() {
         { role: "togglefullscreen" },
       ],
     },
-    {
+    BUNDLED ? dataMenu : {
       label: "Develop",
       submenu: [
         {

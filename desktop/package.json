@@ -8,7 +8,10 @@
   "scripts": {
     "start": "electron .",
     "package": "node scripts/bake-path.js && sh scripts/make-icon.sh && electron-builder --mac --dir",
-    "install-app": "npm run package && sh scripts/install.sh"
+    "install-app": "npm run package && sh scripts/install.sh",
+    "stage": "node scripts/stage-server.js",
+    "dist": "npm run stage && sh scripts/make-icon.sh && electron-builder --mac --arm64 --x64 --config electron-builder.release.js && node scripts/zip-release.js",
+    "release": "node scripts/release.js"
   },
   "build": {
     "appId": "local.finance.dashboard",
@@ -17,6 +20,7 @@
       "main.js",
       "server.js",
       "splash.html",
+      "updates.js",
       "project-path.json",
       "package.json"
     ],
@@ -32,6 +36,7 @@
   },
   "devDependencies": {
     "electron": "^44.4.5",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.25.12"
   }
 }

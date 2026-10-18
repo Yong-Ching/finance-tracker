@@ -1,10 +1,12 @@
 import "server-only";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
+import fs from "node:fs";
 import path from "node:path";
 import * as schema from "./schema";
+import { DATA_DIR } from "@/lib/paths";
 
-const DB_PATH = process.env.FINANCE_DB ?? path.join(process.cwd(), "data", "sqlite.db");
+const DB_PATH = process.env.FINANCE_DB ?? path.join(DATA_DIR, "sqlite.db");
 
 // A test that reaches the real database can silently rewrite real financial
 // records - this has happened. Fail loudly instead.
@@ -20,6 +22,8 @@ if ((process.env.VITEST || process.env.NODE_ENV === "test") && !process.env.FINA
 const globalForDb = globalThis as unknown as { __financeDb?: Database.Database };
 
 function open(): Database.Database {
+  // A fresh checkout has no data folder yet, and `next build` opens the database.
+  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
   const conn = new Database(DB_PATH);
   conn.pragma("journal_mode = WAL");
   conn.pragma("foreign_keys = ON");

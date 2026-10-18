@@ -2,3 +2,5 @@ node_modules/
 dist/
 project-path.json
 build/icon.icns
+build/release/
+dist-release/

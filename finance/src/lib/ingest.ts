@@ -8,6 +8,7 @@ import { detectParsers, ParseError, type StatementResult } from "./parsers";
 import { classify, byPriority } from "./classify";
 import { dedupeHash, fileHash } from "./dedupe";
 import { runReview, linkReviewToStatement, reviewEnabled } from "./ai/persist";
+import { DATA_DIR, FILES_ROOT } from "./paths";
 import type { ReviewOutcome } from "./ai/review";
 
 type Db = BetterSQLite3Database<typeof schema>;
@@ -37,7 +38,7 @@ export interface IngestOutcome {
   };
 }
 
-const STATEMENT_DIR = path.join(process.cwd(), "data", "statements");
+const STATEMENT_DIR = path.join(DATA_DIR, "statements");
 
 /**
  * Parses one statement PDF and commits it.
@@ -279,5 +280,5 @@ function storeFile(file: { buffer: Uint8Array; filename: string }, account: stri
   const ext = path.extname(file.filename) || ".pdf";
   const dest = path.join(dir, `${sha.slice(0, 16)}${ext}`);
   if (!fs.existsSync(dest)) fs.writeFileSync(dest, file.buffer);
-  return path.relative(process.cwd(), dest);
+  return path.relative(FILES_ROOT, dest);
 }
