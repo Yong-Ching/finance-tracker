@@ -2,9 +2,11 @@ import type { Parser } from "./types";
 import { dbsParser } from "./dbs";
 import { citibankParser } from "./citibank";
 import { youtripParser } from "./youtrip";
+import { maybankParser } from "./maybank";
+import { tngParser } from "./tng";
 
 /** Every parser the app knows. */
-export const PARSERS: Parser[] = [dbsParser, citibankParser, youtripParser];
+export const PARSERS: Parser[] = [dbsParser, citibankParser, youtripParser, maybankParser, tngParser];
 
 export interface Detection {
   parser: Parser;

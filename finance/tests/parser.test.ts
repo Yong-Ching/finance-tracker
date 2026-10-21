@@ -8,7 +8,7 @@ import { detectParsers } from "@/lib/parsers";
 /**
  * These suites run against real statement PDFs, which never enter the repo.
  * Each needs two private inputs, both outside version control:
- *   - the PDFs, under ../data/statements/{DBS,citibank,youtrip}/
+ *   - the PDFs, under ../data/statements/{DBS,citibank,youtrip,maybank}/
  *   - tests/fixtures/statements.local.json: the balances and sample rows read
  *     off those statements (statements.example.json shows the shape)
  * Without both, the suite skips.
@@ -215,5 +215,128 @@ describe.skipIf(ytFiles.length === 0)("YouTrip parser", () => {
     expect(best.parser.name).toBe("youtrip");
     expect(dbsParser.detect(text)).toBeLessThan(0.5);
     expect(citibankParser.detect(text)).toBeLessThan(0.5);
+  }, 60_000);
+});
+
+/* -------------------------------------------------------------- Maybank --- */
+
+import { maybankParser } from "@/lib/parsers/maybank";
+
+const MB_DIR = path.resolve(__dirname, "..", "..", "data", "statements", "maybank");
+const MB = fixture.maybank as
+  | {
+      sample: string;
+      expected: Record<string, { n: number; open: number; close: number }>;
+      credit: Probe;
+      debit: Probe;
+      /** The last row on a page, whose description continues overleaf. */
+      pageBreak: Probe & { date: string };
+    }
+  | undefined;
+const mbFiles = MB ? pdfsIn(MB_DIR).filter((f) => f in MB.expected) : [];
+const mbSample = async () => maybankParser.parse(
+  await extractRows(new Uint8Array(fs.readFileSync(path.join(MB_DIR, MB!.sample)))),
+);
+
+describe.skipIf(mbFiles.length === 0)("Maybank parser", () => {
+  it.each(mbFiles)("%s parses and its balances reconcile", async (file) => {
+    const r = maybankParser.parse(await extractRows(new Uint8Array(fs.readFileSync(path.join(MB_DIR, file)))));
+    const exp = MB!.expected[file];
+    expect(r.transactions.length).toBe(exp.n);
+    expect(r.openingBalanceCents).toBe(exp.open);
+    expect(r.closingBalanceCents).toBe(exp.close);
+    // Empty also means the footer's TOTAL CREDIT and TOTAL DEBIT matched.
+    expect(r.warnings).toEqual([]);
+    const sum = r.transactions.reduce((a, t) => a + t.amountCents, 0);
+    expect(r.openingBalanceCents! + sum).toBe(r.closingBalanceCents);
+  }, 60_000);
+
+  it("reads direction from the sign printed after the amount", async () => {
+    const r = await mbSample();
+    const credit = r.transactions.find((t) => re(MB!.credit.pattern).test(t.descriptionRaw));
+    const debit = r.transactions.find((t) => re(MB!.debit.pattern).test(t.descriptionRaw));
+    expect(credit!.amountCents).toBe(MB!.credit.cents);
+    expect(debit!.amountCents).toBe(MB!.debit.cents);
+  }, 60_000);
+
+  it("keeps a description that carries over a page break", async () => {
+    const r = await mbSample();
+    const exp = MB!.pageBreak;
+    const row = r.transactions.find((t) => t.txnDate === exp.date && t.amountCents === exp.cents && re(exp.pattern).test(t.descriptionRaw));
+    expect(row).toBeDefined();
+  }, 60_000);
+
+  it("is told apart from the other statement formats", async () => {
+    const text = rowsToText(await extractRows(new Uint8Array(fs.readFileSync(path.join(MB_DIR, MB!.sample)))));
+    const [best] = detectParsers(text);
+    expect(best.parser.name).toBe("maybank");
+    expect(best.confidence).toBeGreaterThan(0.8);
+    expect(dbsParser.detect(text)).toBeLessThan(0.5);
+    expect(citibankParser.detect(text)).toBeLessThan(0.5);
+    expect(youtripParser.detect(text)).toBeLessThan(0.5);
+  }, 60_000);
+});
+
+/* ---------------------------------------------------------- Touch 'n Go --- */
+
+import { tngParser } from "@/lib/parsers/tng";
+
+const TNG_DIR = path.resolve(__dirname, "..", "..", "data", "statements", "tngo");
+const TNG = fixture.tng as
+  | {
+      sample: string;
+      n: number;
+      periodFrom: string;
+      periodTo: string;
+      reload: Probe & { date: string };
+      payment: Probe & { date: string };
+      /** A type the PDF prints run together with its reference ("Receive from Wallet2026…"). */
+      glued: Probe & { date: string };
+    }
+  | undefined;
+const tngFile = TNG && pdfsIn(TNG_DIR).includes(TNG.sample) ? path.join(TNG_DIR, TNG.sample) : null;
+const tngRows = async () => extractRows(new Uint8Array(fs.readFileSync(tngFile!)));
+const tngFind = (r: { transactions: { txnDate: string; amountCents: number; descriptionRaw: string }[] }, p: Probe & { date: string }) =>
+  r.transactions.find((t) => t.txnDate === p.date && t.amountCents === p.cents && re(p.pattern).test(t.descriptionRaw));
+
+describe.skipIf(!tngFile)("Touch 'n Go parser", () => {
+  it("reads every wallet transaction, each agreeing with the balance printed after it", async () => {
+    const r = tngParser.parse(await tngRows());
+    expect(r.transactions.length).toBe(TNG!.n);
+    expect(r.periodFrom).toBe(TNG!.periodFrom);
+    expect(r.periodTo).toBe(TNG!.periodTo);
+    // Empty also means no break in the running balance, row by row.
+    expect(r.warnings).toEqual([]);
+    const sum = r.transactions.reduce((a, t) => a + t.amountCents, 0);
+    expect(r.openingBalanceCents! + sum).toBe(r.closingBalanceCents);
+  }, 60_000);
+
+  it("takes direction from the transaction type", async () => {
+    const r = tngParser.parse(await tngRows());
+    expect(tngFind(r, TNG!.reload)).toBeDefined();
+    expect(tngFind(r, TNG!.payment)).toBeDefined();
+    expect(tngFind(r, TNG!.glued)).toBeDefined();
+  }, 60_000);
+
+  it("stops at the GO+ section and keeps identical transactions apart", async () => {
+    const r = tngParser.parse(await tngRows());
+    expect(r.transactions.some((t) => /Daily Earnings|GO\+ Cash In/i.test(t.descriptionRaw))).toBe(false);
+    // The reference makes each description unique, so equal rows never collapse.
+    const keys = r.transactions.map((t) => `${t.txnDate}|${t.amountCents}|${t.descriptionRaw}`);
+    expect(new Set(keys).size).toBe(keys.length);
+  }, 60_000);
+
+  it("is told apart from the other statement formats", async () => {
+    const text = rowsToText(await tngRows());
+    const [best] = detectParsers(text);
+    expect(best.parser.name).toBe("tng");
+    expect(best.confidence).toBeGreaterThan(0.8);
+    for (const p of [dbsParser, citibankParser, youtripParser, maybankParser]) expect(p.detect(text)).toBeLessThan(0.5);
+  }, 60_000);
+
+  it.skipIf(mbFiles.length === 0)("does not claim a Maybank statement that pays it", async () => {
+    // Maybank lines read "SALE DEBIT TNG-EWALLET": that alone must not claim the document.
+    const mbText = rowsToText(await extractRows(new Uint8Array(fs.readFileSync(path.join(MB_DIR, MB!.sample)))));
+    expect(tngParser.detect(mbText)).toBeLessThan(0.5);
   }, 60_000);
 });

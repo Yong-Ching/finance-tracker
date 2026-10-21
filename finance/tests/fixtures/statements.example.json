@@ -23,5 +23,23 @@
     "topUpCents": 20000,
     "fx": { "currency": "MYR", "cents": -3000, "originalCents": 10000 },
     "otherCurrency": "IDR"
+  },
+  "maybank": {
+    "sample": "123456789_20260131_0000.pdf",
+    "expected": {
+      "123456789_20260131_0000.pdf": { "n": 20, "open": 150000, "close": 120000 }
+    },
+    "credit": { "pattern": "GIRO CR", "cents": 50000 },
+    "debit": { "pattern": "SOME MERCHANT", "cents": -1500 },
+    "pageBreak": { "date": "2026-06-15", "cents": -2500, "pattern": "SOME MERCHANT ON THE NEXT PAGE" }
+  },
+  "tng": {
+    "sample": "tng_ewallet_transactions_20260101_20260630.pdf",
+    "n": 120,
+    "periodFrom": "2026-01-01",
+    "periodTo": "2026-06-30",
+    "reload": { "pattern": "^Reload Credit / Debit Card", "date": "2026-02-03", "cents": 5000 },
+    "payment": { "pattern": "^Payment SOME MERCHANT", "date": "2026-02-04", "cents": -1250 },
+    "glued": { "pattern": "^Receive from Wallet ", "date": "2026-03-15", "cents": 2000 }
   }
 }

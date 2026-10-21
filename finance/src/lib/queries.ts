@@ -22,11 +22,24 @@ export function availableMonths(): string[] {
     .map((r) => r.m);
 }
 
+/**
+ * Totals are in SGD. An account in another currency (Maybank, in ringgit) is
+ * shown on its own in its own currency, and left out of every combined total:
+ * adding RM 100 to S$100 would make S$200 out of money that is neither.
+ */
+export const BASE_CURRENCY = "SGD";
+const inBaseCurrency = sql`${s.transactions.accountId} in
+  (select id from accounts where currency = ${BASE_CURRENCY})`;
+
+/** One account in its own currency, or every base-currency account together. */
+const forAccount = (accountId?: number) =>
+  accountId ? eq(s.transactions.accountId, accountId) : inBaseCurrency;
+
 const inPeriod = (p: Period, accountId?: number) =>
   and(
     gte(s.transactions.txnDate, p.from),
     lte(s.transactions.txnDate, p.to),
-    accountId ? eq(s.transactions.accountId, accountId) : undefined,
+    forAccount(accountId),
     // A quarantined statement's rows never enter a total.
     sql`(${s.transactions.statementId} is null or ${s.transactions.statementId} in
          (select id from statements where status = 'imported'))`,
@@ -57,7 +70,8 @@ export function totals(p: Period, accountId?: number): Totals {
 
   const get = (t: string) => rows.find((r) => r.txnType === t)?.total ?? 0;
   const incomeCents = get("income");
-  const expenseCents = Math.abs(get("expense") + get("debt_repayment"));
+  // Net: repayments into expense categories reduce it.
+  const expenseCents = -(get("expense") + get("debt_repayment"));
   const savingsCents = Math.abs(get("savings"));
 
   // A transfer is unaccounted until a confirmed link ties it to real spending.
@@ -103,7 +117,7 @@ export function byMonth(accountId?: number): MonthRow[] {
       total: sql<number>`sum(${s.transactions.amountCents})`,
     })
     .from(s.transactions)
-    .where(accountId ? eq(s.transactions.accountId, accountId) : undefined)
+    .where(forAccount(accountId))
     .groupBy(sql`1`, s.transactions.txnType)
     .orderBy(sql`1`)
     .all();
@@ -114,7 +128,7 @@ export function byMonth(accountId?: number): MonthRow[] {
       month: r.month, incomeCents: 0, expenseCents: 0, savingsCents: 0, transferCents: 0,
     };
     if (r.txnType === "income") m.incomeCents += r.total;
-    else if (r.txnType === "expense" || r.txnType === "debt_repayment") m.expenseCents += Math.abs(r.total);
+    else if (r.txnType === "expense" || r.txnType === "debt_repayment") m.expenseCents -= r.total;
     else if (r.txnType === "savings") m.savingsCents += Math.abs(r.total);
     else m.transferCents += Math.abs(r.total);
     map.set(r.month, m);
@@ -138,14 +152,17 @@ export function expenseByCategory(p: Period, accountId?: number, cap = 5): Categ
     .select({
       categoryId: s.transactions.categoryId,
       name: sql<string>`coalesce(${s.categories.name}, 'Uncategorized')`,
-      totalCents: sql<number>`abs(sum(${s.transactions.amountCents}))`,
+      // Signed spend, not abs(): money back into an expense category (a friend
+      // repaying) nets it down, and a category repaid more than was spent in
+      // the period shows as negative rather than as spending.
+      totalCents: sql<number>`-sum(${s.transactions.amountCents})`,
       count: sql<number>`count(*)`,
     })
     .from(s.transactions)
     .leftJoin(s.categories, eq(s.transactions.categoryId, s.categories.id))
     .where(and(inPeriod(p, accountId), inArray(s.transactions.txnType, ["expense", "debt_repayment"])))
     .groupBy(s.transactions.categoryId)
-    .orderBy(desc(sql`abs(sum(${s.transactions.amountCents}))`))
+    .orderBy(desc(sql`-sum(${s.transactions.amountCents})`))
     .all();
 
   const grand = rows.reduce((a, r) => a + r.totalCents, 0) || 1;
@@ -196,6 +213,7 @@ export interface AccountCard {
   name: string;
   institution: string;
   kind: string;
+  currency: string;
   isPocket: boolean;
   balanceCents: number | null;
   flowCents: number;
@@ -212,7 +230,7 @@ export function accountCards(p: Period): AccountCard[] {
         n: sql<number>`count(*)`,
       })
       .from(s.transactions)
-      .where(and(inPeriod(p), eq(s.transactions.accountId, a.id)))
+      .where(inPeriod(p, a.id))
       .get()!;
     const last = db
       .select({ d: s.transactions.txnDate, b: s.transactions.balanceAfterCents })
@@ -243,6 +261,7 @@ export function accountCards(p: Period): AccountCard[] {
       name: a.name,
       institution: a.institution,
       kind: a.kind,
+      currency: a.currency,
       isPocket: a.isPocket,
       balanceCents: last?.b ?? stmtBalance?.b ?? null,
       flowCents: flow.total,
@@ -320,7 +339,14 @@ export interface TxnRow {
   isReviewed: boolean;
   accountId: number;
   accountName: string;
+  currency: string;
   statementStatus: string | null;
+}
+
+/** A sum of transactions in one currency; a list can hold several. */
+export interface CurrencySum {
+  currency: string;
+  cents: number;
 }
 
 /** An id list as a condition; an empty list matches nothing rather than everything. */
@@ -366,7 +392,7 @@ function txnWhere(f: TxnFilters) {
   return clauses.length ? and(...clauses) : undefined;
 }
 
-export function listTransactions(f: TxnFilters): { rows: TxnRow[]; total: number; sumCents: number } {
+export function listTransactions(f: TxnFilters): { rows: TxnRow[]; total: number; sums: CurrencySum[] } {
   const where = txnWhere(f);
   const perPage = f.perPage ?? 100;
   const page = Math.max(1, f.page ?? 1);
@@ -386,6 +412,7 @@ export function listTransactions(f: TxnFilters): { rows: TxnRow[]; total: number
       isReviewed: s.transactions.isReviewed,
       accountId: s.transactions.accountId,
       accountName: s.accounts.name,
+      currency: s.accounts.currency,
       statementStatus: s.statements.status,
     })
     .from(s.transactions)
@@ -398,16 +425,25 @@ export function listTransactions(f: TxnFilters): { rows: TxnRow[]; total: number
     .offset((page - 1) * perPage)
     .all() as TxnRow[];
 
+  // Summed per currency: a list can span the SGD accounts and Maybank.
   const agg = db
     .select({
+      currency: s.accounts.currency,
       n: sql<number>`count(*)`,
-      total: sql<number>`coalesce(sum(${s.transactions.amountCents}), 0)`,
+      cents: sql<number>`sum(${s.transactions.amountCents})`,
     })
     .from(s.transactions)
+    .innerJoin(s.accounts, eq(s.transactions.accountId, s.accounts.id))
     .where(where)
-    .get()!;
+    .groupBy(s.accounts.currency)
+    .all()
+    .sort((a, b) => Number(b.currency === BASE_CURRENCY) - Number(a.currency === BASE_CURRENCY));
 
-  return { rows, total: agg.n, sumCents: agg.total };
+  return {
+    rows,
+    total: agg.reduce((a, r) => a + r.n, 0),
+    sums: agg.map(({ currency, cents }) => ({ currency, cents })),
+  };
 }
 
 export function allCategories() {
@@ -463,6 +499,7 @@ export function listStatements() {
     .select({
       id: s.statements.id,
       accountName: s.accounts.name,
+      currency: s.accounts.currency,
       filename: s.statements.filename,
       periodFrom: s.statements.periodFrom,
       periodTo: s.statements.periodTo,
@@ -481,16 +518,29 @@ export function listStatements() {
     .all();
 }
 
-/** Months an account has a statement for, so gaps in coverage are visible. */
+/**
+ * Months an account has a statement for, so gaps in coverage are visible. A
+ * statement covers every month from its start to its end: a bank's is one
+ * month, but a wallet export (Touch 'n Go) can span many.
+ */
 export function statementCoverage(accountId: number): string[] {
-  return db
-    .select({ m: sql<string>`substr(${s.statements.periodTo}, 1, 7)` })
+  const months = new Set<string>();
+  const rows = db
+    .select({ from: s.statements.periodFrom, to: s.statements.periodTo })
     .from(s.statements)
     .where(and(eq(s.statements.accountId, accountId), eq(s.statements.status, "imported")))
-    .groupBy(sql`1`)
-    .orderBy(sql`1`)
-    .all()
-    .map((r) => r.m);
+    .all();
+  for (const r of rows) {
+    if (!r.to) continue;
+    let m = (r.from ?? r.to).slice(0, 7);
+    const end = r.to.slice(0, 7);
+    while (m <= end) {
+      months.add(m);
+      const [y, mo] = m.split("-").map(Number);
+      m = mo === 12 ? `${y + 1}-01` : `${y}-${String(mo + 1).padStart(2, "0")}`;
+    }
+  }
+  return [...months].sort();
 }
 
 /* --------------------------------------------------------- AI suggestions --- */
@@ -639,6 +689,8 @@ function outflows(): ChargeRow[] {
         sql`${s.transactions.amountCents} < 0`,
         // A transfer to a pocket is not a charge; what it bought is, on the pocket's statement.
         ne(s.transactions.txnType, "internal_transfer"),
+        // Amounts and cadences are compared across charges, so one currency only.
+        inBaseCurrency,
         sql`(${s.transactions.statementId} is null or ${s.transactions.statementId} in
              (select id from statements where status = 'imported'))`,
       ),

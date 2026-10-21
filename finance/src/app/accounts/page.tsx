@@ -1,4 +1,4 @@
-import { formatMoney, formatCents } from "@/lib/money";
+import { formatMoney, formatInColumn } from "@/lib/money";
 import { allAccounts, listStatements, statementCoverage, availableMonths } from "@/lib/queries";
 import { Card, Empty } from "@/components/ui";
 
@@ -87,8 +87,8 @@ export default async function AccountsPage() {
                     <td className="tnum whitespace-nowrap py-1.5 text-[var(--text-secondary)]">
                       {st.periodFrom} - {st.periodTo}
                     </td>
-                    <td className="tnum py-1.5 text-right">{formatCents(st.openingBalanceCents ?? 0)}</td>
-                    <td className="tnum py-1.5 text-right">{formatCents(st.closingBalanceCents ?? 0)}</td>
+                    <td className="tnum py-1.5 text-right">{formatInColumn(st.openingBalanceCents ?? 0, st.currency)}</td>
+                    <td className="tnum py-1.5 text-right">{formatInColumn(st.closingBalanceCents ?? 0, st.currency)}</td>
                     <td className="tnum py-1.5 text-right text-[var(--text-secondary)]">{st.txnCount}</td>
                     <td className="py-1.5">
                       {st.status === "imported" ? (

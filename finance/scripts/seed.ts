@@ -47,13 +47,16 @@ const TYPE_TO_BUCKET: Record<TxnType, Bucket> = {
  * kind=spending with seen=false, which counted them as spending AND left their
  * contents unitemised - the double-count this project exists to fix.
  */
-const POCKET_CATEGORIES = new Set(["YouTrip top-up", "Citibank credit card"]);
+const POCKET_CATEGORIES = new Set(["YouTrip top-up", "Citibank credit card", "TNG top-up"]);
 
 const ACCOUNTS = [
-  { name: "DBS", institution: "DBS Bank", kind: "bank" as const, isPocket: false, sortOrder: 1 },
-  { name: "CPF", institution: "CPF Board", kind: "retirement" as const, isPocket: false, sortOrder: 2 },
-  { name: "YouTrip", institution: "YouTrip", kind: "prepaid" as const, isPocket: true, sortOrder: 3 },
-  { name: "Citibank", institution: "Citibank", kind: "credit_card" as const, isPocket: true, sortOrder: 4 },
+  { name: "DBS", institution: "DBS Bank", kind: "bank" as const, currency: "SGD", isPocket: false, sortOrder: 1 },
+  { name: "CPF", institution: "CPF Board", kind: "retirement" as const, currency: "SGD", isPocket: false, sortOrder: 2 },
+  { name: "YouTrip", institution: "YouTrip", kind: "prepaid" as const, currency: "SGD", isPocket: true, sortOrder: 3 },
+  { name: "Citibank", institution: "Citibank", kind: "credit_card" as const, currency: "SGD", isPocket: true, sortOrder: 4 },
+  // In ringgit: shown on its own, never added into the SGD totals.
+  { name: "Maybank", institution: "Maybank", kind: "bank" as const, currency: "MYR", isPocket: false, sortOrder: 5 },
+  { name: "Touch 'n Go", institution: "Touch 'n Go", kind: "prepaid" as const, currency: "MYR", isPocket: true, sortOrder: 6 },
 ];
 
 /** Categories for a fresh install; personal ones are added from the app. */
@@ -69,6 +72,7 @@ const STARTER_CATEGORIES: Array<[string, Bucket]> = [
   ["Income tax (IRAS)", "expense"],
   ["Investments", "savings"],
   ["YouTrip top-up", "transfer"],
+  ["TNG top-up", "transfer"],
   ["Citibank credit card", "transfer"],
 ];
 
@@ -83,6 +87,9 @@ const EXTRA_CATEGORIES: Array<[string, Bucket]> = [
   ["Insurance", "expense"],
   ["Entertainment", "expense"],
   ["Subscriptions", "expense"],
+  // Paying for a friend is an expense; their transfer back goes in the same
+  // category and nets it out. What remains is what friends still owe.
+  ["Paid for friends", "expense"],
 ];
 
 function main() {
@@ -92,7 +99,7 @@ function main() {
 
   // --- accounts -----------------------------------------------------------
   for (const a of ACCOUNTS) {
-    db.insert(schema.accounts).values({ ...a, currency: "SGD" }).onConflictDoNothing().run();
+    db.insert(schema.accounts).values(a).onConflictDoNothing().run();
   }
   const accountByName = new Map(
     db.select().from(schema.accounts).all().map((a) => [a.name, a.id] as const),
@@ -120,6 +127,7 @@ function main() {
   // which statement holds the other side of the transfer.
   const POCKET_ACCOUNT: Record<string, string> = {
     "YouTrip top-up": "YouTrip",
+    "TNG top-up": "Touch 'n Go",
     "Citibank credit card": "Citibank",
   };
   for (const [catName, accName] of Object.entries(POCKET_ACCOUNT)) {

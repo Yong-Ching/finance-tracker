@@ -65,6 +65,18 @@ const refresh = () => {
 };
 
 /**
+ * The type a category implies. An expense category makes a row an expense even
+ * when money comes IN - a friend paying back their share, a refund - so it
+ * reduces Expenses instead of counting as income. A transfer category implies
+ * nothing: which kind of transfer it is stays the row's own business.
+ */
+function typeForCategory(categoryId: number | null | undefined): TxnType | undefined {
+  if (!categoryId) return undefined;
+  const bucket = db.select({ b: s.categories.bucket }).from(s.categories).where(eq(s.categories.id, categoryId)).get()?.b;
+  return bucket === "expense" || bucket === "income" || bucket === "savings" ? bucket : undefined;
+}
+
+/**
  * A manual edit is recorded twice: on the transaction (so the page updates) and
  * as an override keyed by content hash (so it survives a statement re-import).
  */
@@ -74,6 +86,11 @@ export async function updateTransaction(
 ) {
   const txId = id.parse(rawId);
   const patch = txnPatch.parse(rawPatch);
+  // Choosing a category sets the type too, unless a type was chosen as well.
+  if (patch.categoryId !== undefined && patch.txnType === undefined) {
+    const implied = typeForCategory(patch.categoryId);
+    if (implied) patch.txnType = implied;
+  }
 
   const tx = db.select().from(s.transactions).where(eq(s.transactions.id, txId)).get();
   if (!tx) throw new Error("No such transaction");
@@ -116,13 +133,14 @@ export async function updateTransaction(
  */
 function applyCategory(ids: number[], categoryId: number | null, txnType?: TxnType): number {
   if (!ids.length) return 0;
+  const implied = txnType ?? typeForCategory(categoryId);
   let n = 0;
   db.transaction(() => {
     for (const txId of ids) {
       const tx = db.select().from(s.transactions).where(eq(s.transactions.id, txId)).get();
       if (!tx) continue;
 
-      const nextType = txnType ?? tx.txnType;
+      const nextType = implied ?? tx.txnType;
       db.update(s.transactions)
         .set({ categoryId, txnType: nextType, isReviewed: true, updatedAt: sql`(unixepoch())` })
         .where(eq(s.transactions.id, txId))
@@ -563,21 +581,21 @@ export async function quickSearch(raw: string, rawFrom?: string, rawTo?: string)
   const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional();
   const from = day.parse(rawFrom);
   const to = day.parse(rawTo);
-  if (!term) return { kind: "empty" as const, total: 0, sumCents: 0, rows: [], href: "/transactions" };
+  if (!term) return { kind: "empty" as const, total: 0, sums: [], rows: [], href: "/transactions" };
 
   const { parseAmountQuery } = await import("./amount-query");
   const { listTransactions } = await import("./queries");
   const byAmount = parseAmountQuery(term) !== null;
   const filters = { ...(byAmount ? { amount: term } : { q: term }), from, to };
-  const { rows, total, sumCents } = listTransactions({ ...filters, perPage: 3 });
+  const { rows, total, sums } = listTransactions({ ...filters, perPage: 3 });
 
   const params = new URLSearchParams(Object.entries(filters).filter(([, v]) => v) as [string, string][]);
   return {
     kind: byAmount ? ("amount" as const) : ("text" as const),
     total,
-    sumCents,
+    sums,
     rows: rows.map((r) => ({
-      id: r.id, txnDate: r.txnDate, descriptionRaw: r.descriptionRaw,
+      id: r.id, txnDate: r.txnDate, descriptionRaw: r.descriptionRaw, currency: r.currency,
       amountCents: r.amountCents, accountName: r.accountName, categoryName: r.categoryName,
     })),
     href: `/transactions?${params}`,

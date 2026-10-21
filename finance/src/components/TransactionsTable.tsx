@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { formatCents } from "@/lib/money";
+import { formatCents, formatInColumn } from "@/lib/money";
 import {
   updateTransaction,
   bulkSetCategory,
@@ -263,7 +263,7 @@ export function TransactionsTable({
                     ))}
                   </td>
                   <td className={`tnum whitespace-nowrap px-2 py-1.5 text-right ${r.amountCents < 0 ? "" : "font-medium"}`}>
-                    {formatCents(r.amountCents)}
+                    {formatInColumn(r.amountCents, r.currency)}
                   </td>
                   <td className="px-2 py-1.5">
                     {!r.categoryId && suggestions[r.id] && (

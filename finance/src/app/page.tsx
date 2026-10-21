@@ -256,7 +256,7 @@ export default async function Dashboard({
               {a.name}{a.isPocket && " (pocket)"}
             </div>
             <div className="tnum mt-1 text-[20px] font-semibold leading-none">
-              {a.balanceCents !== null ? <Fig>{formatMoney(a.balanceCents)}</Fig> : <span className="text-[var(--text-muted)]">no data</span>}
+              {a.balanceCents !== null ? <Fig>{formatMoney(a.balanceCents, a.currency)}</Fig> : <span className="text-[var(--text-muted)]">no data</span>}
             </div>
             <div className="mt-1.5 text-[12px] text-[var(--text-muted)]">
               {a.lastStatement ? `to ${a.lastStatement}` : "no statement uploaded"}

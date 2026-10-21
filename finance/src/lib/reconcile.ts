@@ -134,6 +134,7 @@ export interface PocketLedger {
   accountId: number;
   accountName: string;
   kind: string;
+  currency: string;
   /** Confirmed money in from linked transfers. */
   fundedCents: number;
   /** Transfers out of DBS with no confirmed link yet. */
@@ -202,6 +203,7 @@ export function pocketLedgers(): PocketLedger[] {
       accountId: a.id,
       accountName: a.name,
       kind: a.kind,
+      currency: a.currency,
       fundedCents: funded,
       unmatchedCents: unmatched.total,
       unmatchedCount: unmatched.n,
@@ -224,6 +226,9 @@ export interface LinkRow {
   method: string;
   sourceDate: string;
   sourceDesc: string;
+  sourceAccount: string;
+  /** The amount is the source's, so it is in the source account's currency. */
+  currency: string;
   targetDate: string;
   targetDesc: string;
   targetAccount: string;
@@ -242,6 +247,8 @@ export function listLinks(status?: string): LinkRow[] {
       method: s.transferLinks.method,
       sourceDate: sql<string>`(select txn_date from transactions where id = ${s.transferLinks.sourceTxnId})`,
       sourceDesc: sql<string>`(select description_raw from transactions where id = ${s.transferLinks.sourceTxnId})`,
+      sourceAccount: sql<string>`(select a.name from transactions t join accounts a on a.id = t.account_id where t.id = ${s.transferLinks.sourceTxnId})`,
+      currency: sql<string>`(select a.currency from transactions t join accounts a on a.id = t.account_id where t.id = ${s.transferLinks.sourceTxnId})`,
       targetDate: sql<string>`(select txn_date from transactions where id = ${s.transferLinks.targetTxnId})`,
       targetDesc: sql<string>`(select description_raw from transactions where id = ${s.transferLinks.targetTxnId})`,
       targetAccount: sql<string>`(select a.name from transactions t join accounts a on a.id = t.account_id where t.id = ${s.transferLinks.targetTxnId})`,
@@ -258,6 +265,7 @@ export interface UnmatchedTransfer {
   txnDate: string;
   descriptionRaw: string;
   amountCents: number;
+  currency: string;
   pocketName: string | null;
   categoryName: string | null;
 }
@@ -269,11 +277,13 @@ export function unmatchedTransfers(): UnmatchedTransfer[] {
       txnDate: s.transactions.txnDate,
       descriptionRaw: s.transactions.descriptionRaw,
       amountCents: s.transactions.amountCents,
+      currency: s.accounts.currency,
       pocketName: sql<string | null>`(select name from accounts where id = ${s.categories.pocketAccountId})`,
       categoryName: s.categories.name,
     })
     .from(s.transactions)
     .leftJoin(s.categories, eq(s.transactions.categoryId, s.categories.id))
+    .innerJoin(s.accounts, eq(s.transactions.accountId, s.accounts.id))
     .where(
       and(
         eq(s.transactions.txnType, "internal_transfer"),

@@ -32,11 +32,22 @@ export function formatCents(c: Cents): string {
   return `${neg ? "-" : ""}${whole}.${frac}`;
 }
 
-/** Cents -> "S$1,234.56". */
+/** How each currency is written locally; anything else as its ISO code. */
+const SYMBOLS: Record<string, string> = { SGD: "S$", MYR: "RM" };
+
+/** Cents -> "S$1,234.56", "RM1,234.56". */
 export function formatMoney(c: Cents, currency = "SGD"): string {
-  const sym = currency === "SGD" ? "S$" : `${currency} `;
+  const sym = SYMBOLS[currency] ?? `${currency} `;
   const neg = c < 0;
   return `${neg ? "-" : ""}${sym}${formatCents(Math.abs(c))}`;
+}
+
+/**
+ * For figures in a column that is SGD unless marked: bare for SGD, with the
+ * symbol for any other currency, so a ringgit row cannot pass for dollars.
+ */
+export function formatInColumn(c: Cents, currency: string): string {
+  return currency === "SGD" ? formatCents(c) : formatMoney(c, currency);
 }
 
 export const sumCents = (xs: Cents[]): Cents => xs.reduce((a, b) => a + b, 0);

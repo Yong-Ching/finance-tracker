@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { formatCents } from "@/lib/money";
+import { formatCents, formatInColumn } from "@/lib/money";
 import { parseAmountQuery } from "@/lib/amount-query";
 import {
   listTransactions, allCategories, allAccounts, suggestionsByTxnId, flagsByTxnId, getSubscription,
@@ -33,7 +33,7 @@ export default async function TransactionsPage({
     perPage: PER_PAGE,
   };
 
-  const { rows, total, sumCents } = listTransactions(filters);
+  const { rows, total, sums } = listTransactions(filters);
   const subscription = filters.subscriptionId ? getSubscription(filters.subscriptionId) : null;
   const badAmount = filters.amount !== undefined && parseAmountQuery(filters.amount) === null;
   const categories = allCategories();
@@ -70,7 +70,11 @@ export default async function TransactionsPage({
       <div className="flex flex-wrap items-baseline gap-3">
         <h1 className="text-[15px] font-semibold tracking-tight">Transactions</h1>
         <span className="text-[12px] text-[var(--text-muted)]">
-          {total} matching &middot; <span className="tnum">{formatCents(sumCents)}</span> net
+          {total} matching &middot;{" "}
+          <span className="tnum">
+            {sums.length ? sums.map((s) => formatInColumn(s.cents, s.currency)).join(" · ") : formatCents(0)}
+          </span>{" "}
+          net
         </span>
       </div>
 

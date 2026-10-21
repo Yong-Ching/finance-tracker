@@ -1,6 +1,6 @@
 # Finance
 
-Personal finance across DBS, CPF, YouTrip and Citibank, from PDF statements.
+Personal finance across DBS, CPF, YouTrip, Citibank, Maybank and Touch 'n Go, from PDF statements.
 Runs locally; nothing is uploaded anywhere.
 
     npm run dev        # http://127.0.0.1:3000
@@ -107,8 +107,18 @@ is how you find a new statement's column geometry.
 
 ## Status
 
-DBS, Citibank and YouTrip statements parse. CPF is a balance feed rather than a
-transaction feed and is not parsed yet.
+DBS, Citibank, YouTrip, Maybank (Malaysia) and Touch 'n Go eWallet statements
+parse. CPF is a balance feed rather than a transaction feed and is not parsed yet.
+
+A Touch 'n Go export covers any range of months in one PDF. Only its wallet
+section is read: the GO+ section after it accrues interest in fractions of a
+sen, which a ledger of whole cents cannot hold, and every purchase is made from
+the wallet anyway, so moves to and from GO+ show as transfers.
+
+Totals are in SGD. An account in another currency (Maybank, in ringgit) is
+shown on its own, in its own currency, and left out of every combined total
+and of subscription detection; no exchange rate is ever applied. Password-
+protected PDFs have to be unlocked before uploading.
 
 ## Tests and private data
 

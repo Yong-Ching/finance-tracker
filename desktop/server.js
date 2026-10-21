@@ -183,10 +183,15 @@ class FinanceServer {
     }
   }
 
+  /** What decides whether migrate() runs: here, the migration journal. */
+  setupHash() {
+    return migrationsHash(this.migrationsDir);
+  }
+
   // Applies pending drizzle migrations, but only when the migration journal has
   // changed since the last launch - and takes a backup of the database first.
   async migrateIfNeeded() {
-    const hash = migrationsHash(this.migrationsDir);
+    const hash = this.setupHash();
     if (!hash || hash === this.state.migrationsHash) return;
 
     const db = path.join(this.dataDir, "sqlite.db");
@@ -318,6 +323,20 @@ class BundledServer extends FinanceServer {
       FINANCE_MIGRATIONS: this.migrationsDir,
       NEXT_TELEMETRY_DISABLED: "1",
     };
+  }
+
+  /**
+   * The seed as well as the journal: a release can add an account (a new bank)
+   * without any migration, and an installed app must still create it.
+   */
+  setupHash() {
+    const journal = migrationsHash(this.migrationsDir);
+    if (!journal) return null;
+    let seed = "";
+    try {
+      seed = fs.readFileSync(path.join(this.projectDir, "scripts", "seed.js"), "utf8");
+    } catch {}
+    return crypto.createHash("sha1").update(journal).update(seed).digest("hex");
   }
 
   // Seeding after every migration is safe: it only adds what is missing. On a

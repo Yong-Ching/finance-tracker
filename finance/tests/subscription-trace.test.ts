@@ -61,10 +61,10 @@ describe("tracing a subscription to its charges and statements", () => {
   });
 
   it("the Transactions filter shows exactly those charges", () => {
-    const { rows, total, sumCents } = queries.listTransactions({ subscriptionId: subId });
+    const { rows, total, sums } = queries.listTransactions({ subscriptionId: subId });
     expect(total).toBe(5);
     expect(rows.map((r) => r.id).sort((a, b) => a - b)).toEqual(small);
-    expect(sumCents).toBe(-5 * 398);
+    expect(sums).toEqual([{ currency: "SGD", cents: -5 * 398 }]);
   });
 
   it("an unknown subscription matches nothing rather than everything", () => {

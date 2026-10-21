@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { formatMoney, formatCents } from "@/lib/money";
+import { formatMoney, formatInColumn } from "@/lib/money";
 import { pocketLedgers, listLinks, unmatchedTransfers } from "@/lib/reconcile";
 import { LinkButtons, ReconcileBar } from "@/components/LinkActions";
 import { Card, Empty } from "@/components/ui";
@@ -11,14 +11,17 @@ export default async function ReconcilePage() {
   const proposed = listLinks("proposed");
   const confirmed = listLinks("confirmed");
   const unmatched = unmatchedTransfers();
-  const unmatchedTotal = unmatched.reduce((a, t) => a + Math.abs(t.amountCents), 0);
+  // Per currency: the SGD transfers and the ringgit ones cannot share a total.
+  const unmatchedTotals = new Map<string, number>();
+  for (const t of unmatched) unmatchedTotals.set(t.currency, (unmatchedTotals.get(t.currency) ?? 0) + Math.abs(t.amountCents));
+  const unmatchedTotal = [...unmatchedTotals].map(([c, cents]) => formatMoney(cents, c)).join(" and ") || formatMoney(0);
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-baseline gap-3">
         <h1 className="text-[15px] font-semibold tracking-tight">Reconcile</h1>
         <p className="text-[12px] text-[var(--text-muted)]">
-          Ties money leaving DBS to the itemised spend it became
+          Ties money leaving your bank to the itemised spend it became
         </p>
         <div className="ml-auto"><ReconcileBar proposed={proposed.length} /></div>
       </div>
@@ -31,10 +34,10 @@ export default async function ReconcilePage() {
               <div className="space-y-3">
                 <div>
                   <div className="text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
-                    Sent from DBS, unaccounted
+                    Sent from your bank, unaccounted
                   </div>
                   <div className="tnum mt-1 text-[24px] font-semibold leading-none text-[var(--status-warning)]">
-                    {formatMoney(p.unmatchedCents)}
+                    {formatMoney(p.unmatchedCents, p.currency)}
                   </div>
                   <div className="mt-1 text-[11px] text-[var(--text-muted)]">
                     across {p.unmatchedCount} transfers
@@ -47,8 +50,8 @@ export default async function ReconcilePage() {
               </div>
             ) : (
               <dl className="space-y-1.5 text-[13px]">
-                <Line k="Itemised spend on statements" v={formatCents(-p.itemisedCents)} />
-                <Line k="Payments matched to a DBS transfer" v={formatCents(p.fundedCents)} />
+                <Line k="Itemised spend on statements" v={formatInColumn(-p.itemisedCents, p.currency)} />
+                <Line k="Payments matched to a bank transfer" v={formatInColumn(p.fundedCents, p.currency)} />
                 {/*
                   * The balance comes from the statement, never from payments
                   * minus purchases: that subtraction is only correct if every
@@ -58,13 +61,13 @@ export default async function ReconcilePage() {
                   k={`${p.kind === "credit_card" ? "Balance owed" : "Wallet balance"}${
                     p.statementDate ? ` at ${p.statementDate}` : ""
                   }`}
-                  v={formatCents(p.statementBalanceCents ?? 0)}
+                  v={formatInColumn(p.statementBalanceCents ?? 0, p.currency)}
                   strong
                 />
                 {p.unmatchedCents > 0 && (
                   <Line
                     k="Payments not yet on a statement"
-                    v={formatCents(p.unmatchedCents)}
+                    v={formatInColumn(p.unmatchedCents, p.currency)}
                     warn
                   />
                 )}
@@ -83,9 +86,9 @@ export default async function ReconcilePage() {
           <ul className="divide-y divide-[var(--border)]">
             {proposed.map((l) => (
               <li key={l.id} className="flex flex-wrap items-center gap-3 py-2.5 text-[13px]">
-                <span className="tnum font-medium">{formatCents(l.amountCents)}</span>
+                <span className="tnum font-medium">{formatInColumn(l.amountCents, l.currency)}</span>
                 <span className="text-[var(--text-secondary)]">
-                  {l.sourceDate} DBS &rarr; {l.targetDate} {l.targetAccount}
+                  {l.sourceDate} {l.sourceAccount} &rarr; {l.targetDate} {l.targetAccount}
                 </span>
                 <span className="text-[11px] text-[var(--text-muted)]">
                   {l.dateGapDays === 0 ? "same day" : `${l.dateGapDays}d apart`} &middot;{" "}
@@ -97,7 +100,7 @@ export default async function ReconcilePage() {
           </ul>
         ) : (
           <Empty>
-            Nothing to confirm. The matcher pairs a DBS transfer with a pocket top-up of the same amount within a
+            Nothing to confirm. The matcher pairs a bank transfer with a pocket top-up of the same amount within a
             few days.
           </Empty>
         )}
@@ -106,7 +109,7 @@ export default async function ReconcilePage() {
       {/* Unmatched --------------------------------------------------------- */}
       <Card
         title="Unmatched transfers"
-        subtitle={`${unmatched.length} transfers totalling ${formatMoney(unmatchedTotal)} with no confirmed counterpart`}
+        subtitle={`${unmatched.length} transfers totalling ${unmatchedTotal} with no confirmed counterpart`}
       >
         {unmatched.length ? (
           <div className="overflow-x-auto">
@@ -130,7 +133,7 @@ export default async function ReconcilePage() {
                         {t.pocketName ?? t.categoryName ?? "unknown"}
                       </span>
                     </td>
-                    <td className="tnum py-1.5 text-right">{formatCents(t.amountCents)}</td>
+                    <td className="tnum py-1.5 text-right">{formatInColumn(t.amountCents, t.currency)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -146,9 +149,9 @@ export default async function ReconcilePage() {
           <ul className="divide-y divide-[var(--border)]">
             {confirmed.map((l) => (
               <li key={l.id} className="flex flex-wrap items-center gap-3 py-2 text-[13px]">
-                <span className="tnum font-medium">{formatCents(l.amountCents)}</span>
+                <span className="tnum font-medium">{formatInColumn(l.amountCents, l.currency)}</span>
                 <span className="text-[var(--text-secondary)]">
-                  {l.sourceDate} DBS &rarr; {l.targetDate} {l.targetAccount}
+                  {l.sourceDate} {l.sourceAccount} &rarr; {l.targetDate} {l.targetAccount}
                 </span>
                 <span className="ml-auto text-[11px] text-[var(--text-muted)]">{l.method}</span>
               </li>
