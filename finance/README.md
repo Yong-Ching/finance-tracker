@@ -120,6 +120,27 @@ shown on its own, in its own currency, and left out of every combined total
 and of subscription detection; no exchange rate is ever applied. Password-
 protected PDFs have to be unlocked before uploading.
 
+## MCP: sorting with an assistant
+
+`src/mcp/` exposes the data as an MCP server, so Claude (Desktop or Code) can
+read transactions and file them in bulk. Tools: `list_accounts`,
+`list_categories`, `list_rules`, `find_transactions`, `group_transactions`
+(uncategorised rows by merchant, with every id), `summarize`, `categorize`,
+`set_remark`, `create_category`, `create_rule`. There is no delete.
+
+Writes go through the same actions as the pages, so an edit made through MCP
+is an override like a manual one and survives re-importing a statement. The
+first write of a session backs the database up to `data/backups/`.
+
+From source, against `finance/data` (`--silent` keeps npm's banner off stdout,
+which carries the protocol):
+
+    claude mcp add finance-dev -- npm --silent --prefix /path/to/finance run mcp
+
+The release app ships it compiled as `Resources/server/mcp.js`, run by the
+app's own binary as Node; **Data → Connect to Claude…** writes the Claude
+Desktop entry (`desktop/claude.js`).
+
 ## Tests and private data
 
 This repo is public; statements and the database never enter it. The parser

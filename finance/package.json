@@ -16,10 +16,12 @@
     "probe": "tsx scripts/probe.ts",
     "try:parse": "tsx scripts/try-parse.ts",
     "import:pdfs": "tsx scripts/import-pdfs.ts",
-    "review": "tsx scripts/review-backlog.ts"
+    "review": "tsx scripts/review-backlog.ts",
+    "mcp": "tsx --conditions=react-server src/mcp/server.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "better-sqlite3": "^13.0.3",
     "drizzle-orm": "^0.45.2",
     "next": "16.3.3",

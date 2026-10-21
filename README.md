@@ -54,6 +54,22 @@ key to turn on the Review page (see step 5 below for what that does). Restart
 the app after editing. **Data → Show Data Folder** shows your database and
 stored statements; copy that folder while the app is closed to back it up.
 
+
+### Sorting with Claude
+
+Instead of filing transactions one at a time, you can ask Claude to do it.
+**Data → Connect to Claude…** adds Finance Tracker to
+[Claude Desktop](https://claude.ai/download) (or copies a one-line command for
+Claude Code). Quit and reopen Claude Desktop, then ask something like:
+
+> Group my uncategorised transactions by merchant and suggest a category for each.
+
+Claude can list and search your transactions, summarise a month, file whole
+groups into a category, add remarks, and create rules so next month's
+statement sorts itself. It cannot delete anything. Every change is recorded
+like one you made by hand, and your database is backed up before Claude's
+first change each session. What Claude reads is sent to Anthropic to answer
+you; nothing is sent until you ask it something.
 ---
 
 ## Run from source

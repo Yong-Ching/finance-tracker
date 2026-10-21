@@ -110,6 +110,26 @@ try {
     logLevel: "warning",
   });
 
+  // The MCP server Claude launches (desktop/claude.js), compiled the same way.
+  // Two Next-only imports are swapped for stand-ins: "server-only" is a build
+  // guard that throws outside Next, and there are no pages to revalidate.
+  step("compiling the MCP server");
+  require("esbuild").buildSync({
+    entryPoints: [path.join(app, "src", "mcp", "server.ts")],
+    outfile: path.join(server, "mcp.js"),
+    bundle: true,
+    platform: "node",
+    format: "cjs",
+    target: "node22",
+    external: ["better-sqlite3"],
+    alias: {
+      "server-only": path.join(app, "src", "mcp", "shims", "server-only.ts"),
+      "next/cache": path.join(app, "src", "mcp", "shims", "next-cache.ts"),
+    },
+    tsconfig: path.join(app, "tsconfig.json"),
+    logLevel: "warning",
+  });
+
   // ---- 4. better-sqlite3 for both Macs --------------------------------------
 
   // Tracing keeps only the host's binary. Its Node-API prebuilds load in
