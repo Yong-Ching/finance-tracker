@@ -525,6 +525,7 @@ const subscriptionInput = z.object({
   pattern: z.string().trim().min(1).max(200),
   accountId: id.nullable(),
   amountCents: z.number().int().positive().max(100_000_000),
+  variableAmount: z.boolean().optional(),
   cadence: z.enum(SUBSCRIPTION_CADENCES),
   note: z.string().max(500).nullable().optional(),
 });
@@ -559,8 +560,10 @@ export async function setSubscriptionStatus(rawId: number, status: "active" | "c
  * "Not a subscription." Stored as a dismissed row so the same repeating charge
  * is never proposed again; it never counts toward any total.
  */
-export async function dismissCandidate(input: { pattern: string; accountId: number; amountCents: number }) {
-  const clean = subscriptionInput.pick({ pattern: true, amountCents: true })
+export async function dismissCandidate(input: {
+  pattern: string; accountId: number; amountCents: number; variableAmount?: boolean;
+}) {
+  const clean = subscriptionInput.pick({ pattern: true, amountCents: true, variableAmount: true })
     .extend({ accountId: id }).parse(input);
   db.insert(s.subscriptions)
     .values({ ...clean, name: clean.pattern, cadence: "monthly", status: "dismissed" })

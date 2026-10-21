@@ -57,15 +57,17 @@ function SubscriptionTable({ rows, muted = false }: { rows: SubscriptionRow[]; m
                 </Link>
               </td>
               <td className="px-3 first:pl-0 last:pr-0 tnum py-2 text-right">
-                {formatMoney(r.amountCents)}
+                {r.variableAmount && <span className="text-[var(--text-muted)]" title="Varies - the median of the last six charges">~</span>}
+                {formatMoney(r.typicalCents)}
                 <span className="text-[var(--text-muted)]"> / {EVERY[r.cadence]}</span>
+                {r.variableAmount && <span className="block text-[11px] text-[var(--text-muted)]">varies</span>}
               </td>
               <td className="px-3 first:pl-0 last:pr-0 tnum py-2 text-right font-medium">{formatMoney(r.monthlyCents)}</td>
               <td className="px-3 first:pl-0 last:pr-0 tnum py-2 text-[var(--text-secondary)]">
                 {r.lastCharge ? (
                   <>
                     {r.lastCharge.txnDate}
-                    {Math.abs(r.lastCharge.amountCents) !== r.amountCents && (
+                    {Math.abs(r.lastCharge.amountCents) !== r.typicalCents && (
                       <span className="text-[var(--text-muted)]"> · {formatMoney(Math.abs(r.lastCharge.amountCents))}</span>
                     )}
                   </>
@@ -80,6 +82,7 @@ function SubscriptionTable({ rows, muted = false }: { rows: SubscriptionRow[]; m
                   name={r.name}
                   pattern={r.pattern}
                   amountCents={r.amountCents}
+                  variableAmount={r.variableAmount}
                   cadence={r.cadence}
                   priceNowCents={!muted && r.health.kind === "price_changed" ? r.health.nowCents : undefined}
                 />
@@ -127,7 +130,7 @@ export default async function SubscriptionsPage() {
 
       <Card
         title={`Suggested${o.candidates.length ? ` (${o.candidates.length})` : ""}`}
-        subtitle="Charges that repeat at a steady amount and interval. Nothing is tracked until you say so; dismissed ones are not suggested again."
+        subtitle="Charges that repeat at a steady interval - at a steady amount, or as a bill that varies. Nothing is tracked until you say so; dismissed ones are not suggested again."
       >
         {o.candidates.length ? (
           <div className="overflow-x-auto">
@@ -144,7 +147,7 @@ export default async function SubscriptionsPage() {
               </thead>
               <tbody>
                 {o.candidates.map((c) => (
-                  <tr key={`${c.accountId}|${c.pattern}|${c.amountCents}`} className={row}>
+                  <tr key={`${c.accountId}|${c.pattern}|${c.amountCents}|${c.variableAmount}`} className={row}>
                     <td className="px-3 first:pl-0 last:pr-0 py-2">
                       <Link
                         href={chargesHref(c.pattern, c.accountId)}
@@ -155,8 +158,10 @@ export default async function SubscriptionsPage() {
                       <span className="text-[11px] text-[var(--text-muted)]"> · {c.accountName}</span>
                     </td>
                     <td className="px-3 first:pl-0 last:pr-0 tnum py-2 text-right">
+                      {c.variableAmount && <span className="text-[var(--text-muted)]" title="Varies - the median charge">~</span>}
                       {formatMoney(c.amountCents)}
                       <span className="text-[var(--text-muted)]"> / {EVERY[c.cadence]}</span>
+                      {c.variableAmount && <span className="block text-[11px] text-[var(--text-muted)]">varies</span>}
                     </td>
                     <td className={`${td} text-[var(--text-secondary)]`}>
                       <details className="group">
@@ -181,7 +186,7 @@ export default async function SubscriptionsPage() {
                     <td className="px-3 first:pl-0 last:pr-0 py-2">
                       <CandidateActions
                         pattern={c.pattern} accountId={c.accountId} amountCents={c.amountCents}
-                        cadence={c.cadence} suggestedName={suggestName(c.pattern)}
+                        variableAmount={c.variableAmount} cadence={c.cadence} suggestedName={suggestName(c.pattern)}
                       />
                     </td>
                   </tr>
@@ -196,7 +201,7 @@ export default async function SubscriptionsPage() {
 
       <Card
         title="Add by hand"
-        subtitle="For a yearly plan, or anything the suggestions miss. It matches charges by the text below, within 10% of the amount."
+        subtitle="For a yearly plan, or anything the suggestions miss. It matches charges by the text below, within 10% of the amount - or at any amount, for a bill that varies."
       >
         <NewSubscriptionForm accounts={accounts.map((a) => ({ id: a.id, name: a.name }))} />
       </Card>

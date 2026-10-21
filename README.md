@@ -234,11 +234,16 @@ month and per year.
 1. Under **Suggested**, the app lists charges that repeat at a steady amount and
    interval (an Apple plan, a phone bill). Click **Track** and give it a name, or
    **Dismiss** it if it is just a habit; dismissed ones never come back.
+   A monthly bill whose amount changes every time (electricity, a phone plan
+   with usage) is suggested too, marked **varies**.
 2. Use **Add by hand** for anything the suggestions can't see yet, such as a
-   yearly plan.
+   yearly plan. Tick **Amount varies** for a bill that is never the same
+   twice: it then matches any amount, and its monthly cost is the median of its
+   last six charges (the amount you enter is only used until the first charge
+   arrives). **Edit** switches an existing subscription either way.
 3. Each tracked subscription shows its last charge and when the next is due. It
    is flagged if a charge is missed (judged against your latest statement, not
-   today's date) or if the price changes. Mark one **Cancelled** when you end it.
+   today's date) or if the price of a fixed-amount one changes. Mark one **Cancelled** when you end it.
 4. Click a subscription to trace it: every charge matched to it, each linked to
    the statement it appeared on (opens the original PDF), with missed months
    shown as gaps. **Show in Transactions** opens exactly those charges to edit.

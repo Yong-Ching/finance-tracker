@@ -23,6 +23,8 @@ export interface TrackedLike {
   pattern: string;
   accountId: number | null;
   amountCents: number;
+  /** A bill that differs every cycle: matched on description and account alone. */
+  variableAmount?: boolean;
 }
 
 /* --------------------------------------------------------------- matching */
@@ -69,10 +71,16 @@ export function matches(charge: ChargeRow, sub: TrackedLike): boolean {
   if (sub.accountId !== null && charge.accountId !== sub.accountId) return false;
   const pattern = normalise(sub.pattern);
   if (!pattern || !normalise(charge.descriptionRaw).includes(pattern)) return false;
-  return amountMatches(charge.amountCents, sub.amountCents);
+  return sub.variableAmount || amountMatches(charge.amountCents, sub.amountCents);
 }
 
 /* ---------------------------------------------------------------- cadence */
+
+const median = (xs: number[]) => {
+  const s = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2);
+};
 
 const CADENCE_DAYS: Record<SubscriptionCadence, number> = {
   weekly: 7,
@@ -80,6 +88,16 @@ const CADENCE_DAYS: Record<SubscriptionCadence, number> = {
   quarterly: 91.31,
   yearly: 365.25,
 };
+
+/**
+ * What a variable bill is expected to cost: the median of its last six charges,
+ * or the estimate on record before any are seen. A fixed one costs its amount.
+ */
+export function typicalCents(sub: TrackedLike, charges: ChargeRow[]): number {
+  if (!sub.variableAmount || !charges.length) return sub.amountCents;
+  const recent = [...charges].sort((a, b) => a.txnDate.localeCompare(b.txnDate)).slice(-6);
+  return median(recent.map((c) => Math.abs(c.amountCents)));
+}
 
 /** What a charge costs per month, so different cadences can be summed. */
 export function monthlyCents(amountCents: number, cadence: SubscriptionCadence): number {
@@ -146,7 +164,7 @@ export function assess(
   const late = asOf ? daysBetween(due, asOf) : 0;
   let health: SubscriptionHealth = { kind: "on_track" };
   if (late > grace) health = { kind: "overdue", daysLate: late };
-  else if (Math.abs(lastCharge.amountCents) !== sub.amountCents) {
+  else if (!sub.variableAmount && Math.abs(lastCharge.amountCents) !== sub.amountCents) {
     health = { kind: "price_changed", nowCents: Math.abs(lastCharge.amountCents) };
   }
   return { charges, lastCharge, nextDue: due, health };
@@ -203,6 +221,8 @@ export interface Candidate {
   pattern: string;
   accountId: number;
   amountCents: number; // median charge, positive
+  /** The amount differs from charge to charge (a utility bill), so match any. */
+  variableAmount: boolean;
   cadence: SubscriptionCadence;
   count: number;
   firstDate: string;
@@ -219,19 +239,16 @@ const WINDOWS: Array<[SubscriptionCadence, number, number]> = [
   ["quarterly", 85, 100],
 ];
 
-const median = (xs: number[]) => {
-  const s = [...xs].sort((a, b) => a - b);
-  const m = Math.floor(s.length / 2);
-  return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2);
-};
 
 /**
  * Repeating outflows that look like a subscription: the same merchant on the
- * same account, a steady amount, at least three charges in three different
- * months (or weeks), a typical gap that fits a cadence, a charge in at least
- * three of every four cycles, and still running as of the
- * account's latest statement. Anything already tracked - or dismissed - is
- * left out, so a dismissal is permanent.
+ * same account, at least three charges in three different months (or weeks), a
+ * typical gap that fits a cadence, a charge in at least three of every four
+ * cycles, and still running as of the account's latest statement. A steady
+ * amount makes a fixed plan; one merchant can carry several, split by amount.
+ * A merchant charged monthly, at least four times, that never settles on an
+ * amount (a utility bill) is proposed once, as a variable bill. Anything already tracked
+ * - or dismissed - is left out, so a dismissal is permanent.
  */
 export function detectCandidates(
   charges: ChargeRow[],
@@ -251,54 +268,62 @@ export function detectCandidates(
   for (const [g, rows] of groups) {
     const [accountIdStr, pattern] = [g.slice(0, g.indexOf("|")), g.slice(g.indexOf("|") + 1)];
     const accountId = Number(accountIdStr);
+    const asOf = asOfByAccount.get(accountId);
+    const sorted = [...rows].sort((a, b) => a.txnDate.localeCompare(b.txnDate));
 
-    // Split one merchant into its separate plans by amount.
-    const clusters: ChargeRow[][] = [];
-    for (const r of [...rows].sort((a, b) => a.txnDate.localeCompare(b.txnDate))) {
-      const home = clusters.find((cl) => amountMatches(r.amountCents, Math.abs(cl[0].amountCents)));
-      if (home) home.push(r);
-      else clusters.push([r]);
-    }
-
-    for (const cl of clusters) {
-      if (cl.length < 3) continue;
+    /** The candidate a run of charges makes, or null if it does not repeat like a plan. */
+    const propose = (cl: ChargeRow[], variableAmount: boolean): Candidate | null => {
+      if (cl.length < 3) return null;
       const gaps = cl.slice(1).map((r, i) => daysBetween(cl[i].txnDate, r.txnDate));
       const gap = median(gaps);
       const fit = WINDOWS.find(([, lo, hi]) => gap >= lo && gap <= hi);
-      if (!fit) continue;
+      if (!fit) return null;
       const cadence = fit[0];
 
       const periods = new Set(
         cl.map((r) => (cadence === "weekly" ? Math.floor(Date.parse(r.txnDate) / 6.048e8) : r.txnDate.slice(0, 7))),
       );
-      if (periods.size < 3) continue;
+      if (periods.size < 3) return null;
 
       // A subscription charges every cycle. Habits (a weekly bakery visit that
       // happens one week in three) have a plausible median gap but gaps in
       // coverage. Even spacing is NOT required: real plans drift by weeks.
       const cycles = Math.round(daysBetween(cl[0].txnDate, cl.at(-1)!.txnDate) / CADENCE_DAYS[cadence]) + 1;
-      if (periods.size / cycles < 0.75) continue;
+      if (periods.size / cycles < 0.75) return null;
+      // With no amount to tell them apart, a shop visited now and then looks
+      // like a bill. Bills are monthly, come once a cycle, and need more proof.
+      if (variableAmount && (cadence !== "monthly" || cl.length < 4 || cl.length > cycles + 1)) return null;
 
       const amountCents = median(cl.map((r) => Math.abs(r.amountCents)));
       const last = cl.at(-1)!;
-      const asOf = asOfByAccount.get(accountId);
       const grace = Math.max(7, Math.round(CADENCE_DAYS[cadence] * 0.25));
-      if (asOf && daysBetween(nextDue(last.txnDate, cadence), asOf) > grace) continue; // lapsed
-
-      const probe = { ...last, amountCents: -amountCents };
-      if (known.some((k) => matches(probe, k))) continue;
+      if (asOf && daysBetween(nextDue(last.txnDate, cadence), asOf) > grace) return null; // lapsed
 
       const cats = cl.map((r) => r.categoryName).filter(Boolean) as string[];
       const categoryName = cats.length
         ? [...new Set(cats)].sort((a, b) => cats.filter((x) => x === b).length - cats.filter((x) => x === a).length)[0]
         : null;
 
-      out.push({
-        pattern, accountId, amountCents, cadence,
+      return {
+        pattern, accountId, amountCents, variableAmount, cadence,
         count: cl.length, firstDate: cl[0].txnDate, lastDate: last.txnDate, categoryName,
         charges: cl,
-      });
+      };
+    };
+
+    // Split one merchant into its separate plans by amount.
+    const clusters: ChargeRow[][] = [];
+    for (const r of sorted) {
+      const home = clusters.find((cl) => amountMatches(r.amountCents, Math.abs(cl[0].amountCents)));
+      if (home) home.push(r);
+      else clusters.push([r]);
     }
+    let found = clusters.map((cl) => propose(cl, false)).filter((c): c is Candidate => !!c);
+    // No steady amount, but a steady rhythm: one bill whose amount moves.
+    if (!found.length && clusters.length > 1) found = [propose(sorted, true)].filter((c): c is Candidate => !!c);
+
+    const isKnown = (c: Candidate) => known.some((k) => matches({ ...c.charges.at(-1)!, amountCents: -c.amountCents }, k));
+    out.push(...found.filter((c) => !isKnown(c)));
   }
   return out.sort((a, b) => monthlyCents(b.amountCents, b.cadence) - monthlyCents(a.amountCents, a.cadence));
 }

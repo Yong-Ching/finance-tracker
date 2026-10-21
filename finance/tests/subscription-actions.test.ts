@@ -91,6 +91,17 @@ describe("subscription actions", () => {
     expect(o.monthlyTotalCents).toBe(0);
   });
 
+  it("a variable bill matches every charge and costs its median", async () => {
+    const sid = await actions.createSubscription({
+      name: "Streaming", pattern: "STREAMCO", accountId, amountCents: 100, variableAmount: true, cadence: "monthly",
+    });
+    const row = queries.subscriptionOverview().active.find((r) => r.id === sid)!;
+    expect(row).toMatchObject({ variableAmount: true, typicalCents: 1598, monthlyCents: 1598 });
+    expect(row.charges).toHaveLength(5);
+    expect(row.health.kind).toBe("on_track");
+    await actions.deleteSubscription(sid);
+  });
+
   it("rejects input that is not a subscription", async () => {
     const ok = { name: "X", pattern: "X", accountId: null, amountCents: 100, cadence: "monthly" as const };
     await expect(actions.createSubscription({ ...ok, amountCents: -5 })).rejects.toThrow();

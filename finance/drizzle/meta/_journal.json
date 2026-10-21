@@ -36,6 +36,13 @@
       "when": 1791892564915,
       "tag": "0004_conscious_moonstone",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1792594688766,
+      "tag": "0005_variable_subscriptions",
+      "breakpoints": true
     }
   ]
 }

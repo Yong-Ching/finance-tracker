@@ -382,6 +382,9 @@ export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
  * normalised description contains `pattern`, on `accountId` if set, within a
  * tolerance of `amountCents`. Several subscriptions can share a merchant (one
  * APPLE.COM/BILL line, several plans), which is why the amount is part of the key.
+ * A bill that differs every cycle (electricity, a phone plan with usage) sets
+ * `variableAmount`: it matches any amount, and `amountCents` is only the
+ * estimate used until charges are seen.
  */
 export const subscriptions = sqliteTable(
   "subscriptions",
@@ -393,6 +396,7 @@ export const subscriptions = sqliteTable(
     accountId: integer("account_id").references(() => accounts.id),
     /** The expected charge, positive. */
     amountCents: integer("amount_cents").notNull(),
+    variableAmount: integer("variable_amount", { mode: "boolean" }).notNull().default(false),
     cadence: text("cadence").$type<SubscriptionCadence>().notNull().default("monthly"),
     status: text("status").$type<SubscriptionStatus>().notNull().default("active"),
     note: text("note"),

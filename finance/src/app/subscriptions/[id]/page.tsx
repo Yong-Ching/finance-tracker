@@ -26,7 +26,10 @@ export default async function SubscriptionPage({ params }: { params: Promise<{ i
           <h1 className="text-[15px] font-semibold tracking-tight">{sub.name}</h1>
           <p className="mt-0.5 text-[12px] text-[var(--text-muted)]">
             Matches &ldquo;{sub.pattern}&rdquo;{sub.accountName ? ` on ${sub.accountName}` : " on any account"},
-            {" "}{formatMoney(sub.amountCents)} &plusmn;10% every {EVERY[sub.cadence]} &middot; <Health r={sub} />
+            {" "}{sub.variableAmount
+              ? <>at any amount (about {formatMoney(sub.typicalCents)})</>
+              : <>{formatMoney(sub.amountCents)} &plusmn;10%</>}
+            {" "}every {EVERY[sub.cadence]} &middot; <Health r={sub} />
           </p>
         </div>
         <div className="ml-auto">
@@ -36,6 +39,7 @@ export default async function SubscriptionPage({ params }: { params: Promise<{ i
             name={sub.name}
             pattern={sub.pattern}
             amountCents={sub.amountCents}
+            variableAmount={sub.variableAmount}
             cadence={sub.cadence}
             priceNowCents={sub.status === "active" && sub.health.kind === "price_changed" ? sub.health.nowCents : undefined}
           />
@@ -102,7 +106,7 @@ export default async function SubscriptionPage({ params }: { params: Promise<{ i
                       <td className={`${td} text-[var(--text-secondary)]`}>{e.charge.categoryName ?? "-"}</td>
                       <td className={`${td} tnum text-right`}>
                         {formatMoney(Math.abs(e.charge.amountCents))}
-                        {Math.abs(e.charge.amountCents) !== sub.amountCents && (
+                        {!sub.variableAmount && Math.abs(e.charge.amountCents) !== sub.amountCents && (
                           <span
                             className="block text-[11px] text-[var(--text-muted)]"
                             title="Differs from the amount on record, within the 10% tolerance"

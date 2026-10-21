@@ -5,7 +5,7 @@ import * as s from "@/db/schema";
 import type { Period } from "./period";
 import { parseAmountQuery } from "./amount-query";
 import {
-  assess, detectCandidates, matches, merchantKey, monthlyCents, timeline,
+  assess, detectCandidates, matches, merchantKey, monthlyCents, timeline, typicalCents,
   type Candidate, type ChargeRow, type SubscriptionState, type TimelineEntry,
 } from "./subscriptions";
 
@@ -663,6 +663,8 @@ export function matchingTransactionIds(f: TxnFilters): number[] {
 
 export interface SubscriptionRow extends s.Subscription, SubscriptionState {
   accountName: string | null;
+  /** The charge expected each cycle: the amount on record, or a variable bill's recent median. */
+  typicalCents: number;
   monthlyCents: number;
   /** End of the latest statement the charges are judged against. */
   asOf: string | null;
@@ -725,12 +727,15 @@ function toRow(
   const first = assess(x, charges, null);
   const acct = x.accountId ?? first.lastCharge?.accountId ?? null;
   const asOf = acct !== null ? ends.get(acct) ?? null : null;
+  const state = assess(x, charges, asOf);
+  const typical = typicalCents(x, state.charges);
   return {
     ...x,
-    ...assess(x, charges, asOf),
+    ...state,
     asOf,
     accountName: x.accountId !== null ? accountName.get(x.accountId) ?? null : null,
-    monthlyCents: monthlyCents(x.amountCents, x.cadence),
+    typicalCents: typical,
+    monthlyCents: monthlyCents(typical, x.cadence),
   };
 }
 

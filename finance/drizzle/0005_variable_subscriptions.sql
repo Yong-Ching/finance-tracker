@@ -1,0 +1,1 @@
+ALTER TABLE `subscriptions` ADD `variable_amount` integer DEFAULT false NOT NULL;

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  merchantKey, normalise, matches, monthlyCents, nextDue, assess, detectCandidates, timeline,
+  merchantKey, normalise, matches, monthlyCents, nextDue, assess, detectCandidates, timeline, typicalCents,
   type ChargeRow,
 } from "@/lib/subscriptions";
 
@@ -14,7 +14,10 @@ const monthly = (desc: string, cents: number, months: string[], day = "15", acco
 
 const STREAM = "STREAMCO*PREMIUM, Some Street, SG";
 const PAYNOW = (ref: string) => `Advice FAST Payment / Receipt PAYNOW TRANSFER ${ref} TO: JOHN DOE PAYNOW TRANSFER OTHER`;
+const POWER = "GIRO Payments / Collections via GIRO ACME POWER CO";
 const asOf = new Map([[1, "2026-06-30"], [2, "2026-06-30"]]);
+// A bill that differs every month, as electricity does.
+const bill = (months: string[], amounts: number[]) => months.map((m, i) => charge(`2026-${m}-08`, amounts[i], POWER, 1, "Utilities"));
 
 describe("merchant key - who was paid", () => {
   it("takes the card merchant before the location", () => {
@@ -44,6 +47,27 @@ describe("matching a tracked subscription to its charges", () => {
   it("respects the account, and ignores money coming in", () => {
     expect(matches(charge("2026-03-15", 1598, STREAM, 2), sub)).toBe(false);
     expect(matches({ ...charge("2026-03-15", 1598, STREAM), amountCents: 1598 }, sub)).toBe(false);
+  });
+});
+
+describe("a bill that varies", () => {
+  const sub = { pattern: "ACME POWER", accountId: 1, amountCents: 8000, variableAmount: true, cadence: "monthly" as const };
+
+  it("matches any amount, but still only its own description and account", () => {
+    expect(matches(charge("2026-03-08", 4000, POWER), sub)).toBe(true);
+    expect(matches(charge("2026-03-08", 16000, POWER), sub)).toBe(true);
+    expect(matches(charge("2026-03-08", 8000, STREAM), sub)).toBe(false);
+    expect(matches(charge("2026-03-08", 8000, POWER, 2), sub)).toBe(false);
+  });
+  it("is never a price change", () => {
+    const st = assess(sub, bill(["04", "05", "06"], [7000, 9000, 12000]), "2026-06-30");
+    expect(st.health.kind).toBe("on_track");
+  });
+  it("is expected to cost its recent median, or the estimate before any charge", () => {
+    const rows = bill(["01", "02", "03", "04", "05", "06", "07"], [50000, 7000, 9000, 8000, 10000, 11000, 6000]);
+    expect(typicalCents(sub, rows)).toBe(8500); // the first, oldest charge is out of the window
+    expect(typicalCents(sub, [])).toBe(8000);
+    expect(typicalCents({ ...sub, variableAmount: false }, rows)).toBe(8000);
   });
 });
 
@@ -127,6 +151,33 @@ describe("detecting candidates", () => {
     const rows = monthly(STREAM, 1598, months);
     const known = [{ pattern: "STREAMCO*PREMIUM", accountId: 1, amountCents: 1598 }];
     expect(detectCandidates(rows, known, asOf)).toEqual([]);
+  });
+
+  it("proposes a monthly bill whose amount keeps changing, once, as variable", () => {
+    const [c, ...rest] = detectCandidates(bill(months, [7000, 9500, 6200, 11000, 8000]), [], asOf);
+    expect(rest).toEqual([]);
+    expect(c).toMatchObject({ pattern: "ACME POWER CO", variableAmount: true, cadence: "monthly", amountCents: 8000, count: 5 });
+  });
+
+  it("does not call a shop visited several times a month at varying amounts a bill", () => {
+    const rows = months.flatMap((m, i) => [
+      charge(`2026-${m}-02`, 3100 + i * 900, "SOME GROCER"), charge(`2026-${m}-16`, 5400 + i * 1300, "SOME GROCER"),
+    ]);
+    expect(detectCandidates(rows, [], asOf)).toEqual([]);
+  });
+
+  it("does not re-propose a tracked or dismissed variable bill", () => {
+    const known = [{ pattern: "ACME POWER CO", accountId: 1, amountCents: 8000, variableAmount: true }];
+    expect(detectCandidates(bill(months, [7000, 9500, 6200, 11000, 8000]), known, asOf)).toEqual([]);
+  });
+
+  it("keeps a steady plan fixed, even with a stray charge at another amount", () => {
+    const rows = [...monthly(STREAM, 1598, months), charge("2026-04-20", 500, STREAM)];
+    const c = detectCandidates(rows, [], asOf);
+    expect(c).toHaveLength(1);
+    expect(c[0]).toMatchObject({ amountCents: 1598, variableAmount: false });
+    // Tracked, it is not then suggested again as a variable bill.
+    expect(detectCandidates(rows, [{ pattern: "STREAMCO*PREMIUM", accountId: 1, amountCents: 1598 }], asOf)).toEqual([]);
   });
 
   it("finds a monthly PayNow despite a new reference every time", () => {

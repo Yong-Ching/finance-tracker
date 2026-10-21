@@ -16,6 +16,19 @@ const label = "flex flex-col gap-1 text-[11px] uppercase tracking-wide text-[var
 const btn = "rounded px-2 py-1 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] disabled:opacity-40";
 const primary = "rounded bg-[var(--text-primary)] px-2.5 py-1 text-[12px] font-medium text-[var(--surface-1)] hover:opacity-85 disabled:opacity-40";
 
+/** A checkbox that sits in a row of inputs: "the amount differs every time". */
+function VariesBox({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label
+      className="flex items-center gap-1.5 text-[12px] normal-case tracking-normal text-[var(--text-secondary)]"
+      title="A bill that differs every time (electricity, a phone plan with usage): match any amount"
+    >
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="accent-[var(--text-primary)]" />
+      Amount varies
+    </label>
+  );
+}
+
 /** "12.50" -> 1250, or null when it is not a positive amount. */
 function toCents(raw: string): number | null {
   try {
@@ -36,9 +49,9 @@ function useAction() {
 /* ------------------------------------------------------------ candidates */
 
 export function CandidateActions({
-  pattern, accountId, amountCents, cadence, suggestedName,
+  pattern, accountId, amountCents, variableAmount, cadence, suggestedName,
 }: {
-  pattern: string; accountId: number; amountCents: number;
+  pattern: string; accountId: number; amountCents: number; variableAmount: boolean;
   cadence: SubscriptionCadence; suggestedName: string;
 }) {
   const [naming, setNaming] = useState(false);
@@ -55,7 +68,7 @@ export function CandidateActions({
         />
         <button
           className={primary} disabled={pending || !name.trim()}
-          onClick={() => run(() => createSubscription({ name: name.trim(), pattern, accountId, amountCents, cadence }))}
+          onClick={() => run(() => createSubscription({ name: name.trim(), pattern, accountId, amountCents, variableAmount, cadence }))}
         >
           Track
         </button>
@@ -68,7 +81,7 @@ export function CandidateActions({
       <button className={primary} onClick={() => setNaming(true)}>Track</button>
       <button
         className={btn} disabled={pending} title="Not a subscription - don't suggest it again"
-        onClick={() => run(() => dismissCandidate({ pattern, accountId, amountCents }))}
+        onClick={() => run(() => dismissCandidate({ pattern, accountId, amountCents, variableAmount }))}
       >
         Dismiss
       </button>
@@ -79,13 +92,15 @@ export function CandidateActions({
 /* --------------------------------------------------- tracked subscriptions */
 
 export function SubscriptionRowActions({
-  id, status, name, pattern, amountCents, cadence, priceNowCents,
+  id, status, name, pattern, amountCents, variableAmount, cadence, priceNowCents,
 }: {
   id: number; status: "active" | "cancelled"; name: string; pattern: string; amountCents: number;
-  cadence: SubscriptionCadence; priceNowCents?: number;
+  variableAmount: boolean; cadence: SubscriptionCadence; priceNowCents?: number;
 }) {
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState({ name, pattern, amount: formatCents(amountCents).replace(/,/g, ""), cadence });
+  const [draft, setDraft] = useState({
+    name, pattern, amount: formatCents(amountCents).replace(/,/g, ""), variable: variableAmount, cadence,
+  });
   const { pending, run } = useAction();
   const cents = toCents(draft.amount);
 
@@ -103,8 +118,11 @@ export function SubscriptionRowActions({
         />
         <input
           value={draft.amount} onChange={(e) => setDraft({ ...draft, amount: e.target.value })}
-          aria-label="Amount" inputMode="decimal" className={`${input} tnum w-20 text-right`}
+          aria-label={draft.variable ? "Typical amount" : "Amount"}
+          title={draft.variable ? "A rough figure, used until charges are seen" : undefined}
+          inputMode="decimal" className={`${input} tnum w-20 text-right`}
         />
+        <VariesBox checked={draft.variable} onChange={(v) => setDraft({ ...draft, variable: v })} />
         <select
           value={draft.cadence} aria-label="Every"
           onChange={(e) => setDraft({ ...draft, cadence: e.target.value as SubscriptionCadence })}
@@ -116,7 +134,8 @@ export function SubscriptionRowActions({
           className={primary} disabled={pending || !draft.name.trim() || !draft.pattern.trim() || cents === null}
           onClick={() => run(async () => {
             await updateSubscription(id, {
-              name: draft.name.trim(), pattern: draft.pattern.trim(), amountCents: cents!, cadence: draft.cadence,
+              name: draft.name.trim(), pattern: draft.pattern.trim(), amountCents: cents!,
+              variableAmount: draft.variable, cadence: draft.cadence,
             });
             setEditing(false);
           })}
@@ -163,7 +182,8 @@ export function SubscriptionRowActions({
 /* ------------------------------------------------------------- by hand */
 
 export function NewSubscriptionForm({ accounts }: { accounts: { id: number; name: string }[] }) {
-  const [f, setF] = useState({ name: "", pattern: "", accountId: "" as number | "", amount: "", cadence: "monthly" as SubscriptionCadence });
+  const blank = { name: "", pattern: "", accountId: "" as number | "", amount: "", variable: false, cadence: "monthly" as SubscriptionCadence };
+  const [f, setF] = useState(blank);
   const { pending, run } = useAction();
   const cents = toCents(f.amount);
   const ready = f.name.trim() && f.pattern.trim() && cents !== null;
@@ -189,9 +209,10 @@ export function NewSubscriptionForm({ accounts }: { accounts: { id: number; name
         </select>
       </label>
       <label className={label}>
-        Amount (S$)
+        {f.variable ? "Typical amount (S$)" : "Amount (S$)"}
         <input value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} inputMode="decimal" placeholder="0.00" className={`${input} tnum w-24 text-right`} />
       </label>
+      <span className="pb-1.5"><VariesBox checked={f.variable} onChange={(v) => setF({ ...f, variable: v })} /></span>
       <label className={label}>
         Every
         <select value={f.cadence} onChange={(e) => setF({ ...f, cadence: e.target.value as SubscriptionCadence })} className={input}>
@@ -203,9 +224,10 @@ export function NewSubscriptionForm({ accounts }: { accounts: { id: number; name
         onClick={() => run(async () => {
           await createSubscription({
             name: f.name.trim(), pattern: f.pattern.trim(),
-            accountId: f.accountId === "" ? null : f.accountId, amountCents: cents!, cadence: f.cadence,
+            accountId: f.accountId === "" ? null : f.accountId, amountCents: cents!,
+            variableAmount: f.variable, cadence: f.cadence,
           });
-          setF({ name: "", pattern: "", accountId: "", amount: "", cadence: "monthly" });
+          setF(blank);
         })}
       >
         Add
