@@ -12,13 +12,21 @@ your statements, refuses any statement whose balances do not reconcile,
 categorises transactions by rules you write (it never guesses), and shows the
 result on a dashboard. Everything runs on your own machine; nothing is uploaded.
 
-It is built around Singapore accounts (amounts in SGD) and currently reads:
+It is built around Singapore accounts (amounts in SGD), with Malaysian ones
+alongside, and currently reads:
 
-| Statement                        | What it covers                           |
-| -------------------------------- | ---------------------------------------- |
-| DBS bank account (PDF)           | your main account: income, spending      |
-| Citibank credit card eStatement  | what was bought on the card              |
-| YouTrip SGD statement            | what was spent from the travel wallet    |
+| Statement                         | Currency | What it covers                              |
+| --------------------------------- | -------- | ------------------------------------------- |
+| DBS bank account (PDF)            | SGD      | your main account: income, spending         |
+| Citibank credit card eStatement   | SGD      | what was bought on the card                 |
+| YouTrip SGD statement             | SGD      | what was spent from the travel wallet       |
+| Maybank savings account           | MYR      | your Malaysian account                      |
+| Touch 'n Go eWallet history       | MYR      | what was spent from the e-wallet (any range of months in one PDF) |
+
+Totals are in SGD. A ringgit account is shown on its own, in RM, and never
+added into the SGD totals: no exchange rate is ever applied, so no figure is
+approximate. Maybank and Touch 'n Go send password-protected PDFs; the app
+cannot open those yet, so save an unprotected copy first and upload that.
 
 ```
 finance/    the app: Next.js + SQLite
@@ -80,6 +88,7 @@ change each session.
 **Privacy:** what the assistant reads is sent to the company that runs its AI
 model, to answer you. LM Studio is the exception - it runs the model on your
 Mac, so nothing leaves it (pick a model that supports tool use).
+
 ---
 
 ## Run from source
@@ -146,7 +155,9 @@ npm run install-app
 
 This puts **finance-tracker** in `~/Applications` and a shortcut on your Desktop. It runs
 your copy of `finance/` directly: when you change the code, the next launch
-rebuilds by itself. Details are in [desktop/README.md](desktop/README.md).
+rebuilds by itself. Its **Develop → Connect an AI Assistant** connects the same
+assistants as the installed app does (see *Sorting with an AI assistant* above),
+on `finance/data`. Details are in [desktop/README.md](desktop/README.md).
 
 ---
 
@@ -171,9 +182,22 @@ quietly wrong. Uploading the same file twice does nothing.
 
 1. Go to **Transactions** and tick **Needs review**.
 2. Pick a category for each row from its dropdown. To do many at once, tick
-   their checkboxes and choose a category from the bar that appears.
+   their checkboxes and choose a category from the bar that appears. Or let an
+   AI assistant sort a whole month for you (see *Sorting with an AI assistant*).
 3. A manual choice always beats a rule, and survives deleting and re-importing
    the statement.
+
+Picking a category also sets how the transaction counts: an expense category
+makes it spending, an income category income. So money that comes **back**
+into a spending category - a refund, or a friend paying you back - reduces that
+spending instead of counting as income. When you pay for a friend, file both
+your payment and their repayment under **Paid for friends**: they cancel out,
+and what is left is what friends still owe you. For a shared bill, leave the
+bill in its category (say Food) and file their share back into Food too.
+
+To note what a transaction was for, hover its row and click **+ remark** under
+the description (click a remark to change it). Search finds remarks as well
+as descriptions.
 
 To find a transaction by how much it was, use **Amount** in the filters: `3.98`
 (exact), `10-50` (a range), `>100` or `<5`, `~30` (within 10%). Start with `-`
@@ -191,12 +215,13 @@ Each month the review queue gets shorter as your rules grow.
 
 ### 4. Reconcile transfers to your own accounts
 
-Moving money from DBS to your Citibank card or YouTrip wallet is **not
-spending**; the spending is whatever that money bought, which only the card's or
-wallet's own statement shows. Until that statement is uploaded, the money is
-shown as **Unaccounted** on the dashboard.
+Moving money from DBS to your Citibank card or YouTrip wallet, or from Maybank
+to your Touch 'n Go wallet, is **not spending**; the spending is whatever that
+money bought, which only the card's or wallet's own statement shows. Until
+that statement is uploaded, the money is shown as **Unaccounted** on the
+dashboard (in its own currency for a ringgit wallet).
 
-1. Upload the Citibank and YouTrip statements as in step 1.
+1. Upload the card or wallet statements as in step 1.
 2. Go to **Reconcile**. It proposes matches between the two sides of each
    transfer by amount and date.
 3. Confirm the ones that are right. Nothing is linked until you do.
@@ -239,7 +264,7 @@ When running from source (the installed app keeps the same files in
 | Database                | `finance/data/sqlite.db`                   |
 | Copies of uploaded PDFs | `finance/data/statements/`                 |
 | API key, your name      | `finance/.env.local`                       |
-| Pre-migration backups   | `finance/data/backups/` (desktop app only) |
+| Backups                 | `finance/data/backups/`: before each migration (desktop app), and before an AI assistant's first change each session |
 
 All of these are gitignored. To back up, copy the `finance/data/` folder while
 the app is closed.
@@ -261,7 +286,8 @@ you only need `git pull` and, if dependencies changed, `npm install`.
 | Problem                                    | Fix                                                                 |
 | ------------------------------------------ | ------------------------------------------------------------------- |
 | Upload says **Unknown account**            | Run `npm run db:seed` in `finance/`.                                |
-| Upload says **No parser recognised this document** | It isn't one of the three supported statement formats. |
+| Upload says **No parser recognised this document** | It isn't one of the five supported statement formats. |
+| Upload fails on a Maybank or Touch 'n Go PDF | It is password-protected, which the app cannot open yet. Upload an unprotected copy. |
 | Port 3000 is already in use                | `npm run dev -- -p 3001`, then open http://127.0.0.1:3001           |
 | Desktop app shows an error while starting  | The window shows the output; **Develop → Show Server Log** has all of it. |
 

@@ -12,6 +12,7 @@ The same shell is built two ways:
 | Runs                | your live `finance/` on system Node     | a server built into the app, on Electron's Node |
 | Data                | `finance/data/`                         | `~/Library/Application Support/Finance Tracker/data/` |
 | Updates             | edit the code, reopen                   | **Update and Restart**, one click             |
+| AI assistants (MCP) | **Develop → Connect an AI Assistant**   | **Data → Connect an AI Assistant**            |
 
 The two have different names and app IDs, so both can be installed side by
 side without sharing settings or data. Everything below the release section
@@ -60,8 +61,12 @@ entry), and the Chromium dev tools.
     main.js           window, menu, lifecycle
     server.js         find node -> migrate -> build if stale -> start/stop Next
     splash.html       the loading/error screen shown while the server starts
+    updates.js        the release app's update check and one-click install
+    assistants.js     Connect an AI Assistant: each supported app's MCP settings
     scripts/          bake-path.js (records finance/ location), install.sh,
-                      make-icon.sh (builds the .icns from ../logo-assets)
+                      make-icon.sh (builds the .icns from ../logo-assets);
+                      release: stage-server.js, after-pack.js, zip-release.js,
+                      release.js
 
 Settings and the server log live in `~/Library/Application Support/finance-tracker/`.
 Deleting `settings.json` forces a fresh build and migration check on next launch.
@@ -112,7 +117,8 @@ release, never by deleting and re-pushing a tag.
    never from the working copy, so `.env.local` and `data/` cannot end up in a
    public installer, and it refuses to finish if anything that looks personal
    (an env file, database, PDF or CSV) is in the output. It also compiles the
-   migrate and seed scripts to plain JS for the app to run.
+   migrate and seed scripts, and the MCP server (`mcp.js`), to plain JS for the
+   app to run.
 2. `electron-builder.release.js` packages the shell for `arm64` and `x64`.
    The staged server is the same for both: its only native module,
    better-sqlite3, ships Node-API binaries for both kinds of Mac, and those load
@@ -124,8 +130,10 @@ release, never by deleting and re-pushing a tag.
    symlinks the signature depends on) and writes `SHA256SUMS`.
 
 On launch, the release app backs up and migrates the database when the
-migrations changed, seeds what is missing (accounts, starter categories and
-rules on a first launch), and starts the server on port 3418, so it can run
+migrations or the seed changed (so a release that adds an account, like
+Maybank, creates it on installed apps), seeds what is missing (accounts,
+starter categories and rules on a first launch), and starts the server on
+port 3418, so it can run
 next to the development app. `updates.js` checks
 `releases/latest` once per launch and from **Check for Updates…**.
 
