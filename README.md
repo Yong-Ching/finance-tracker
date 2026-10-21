@@ -59,16 +59,17 @@ stored statements; copy that folder while the app is closed to back it up.
 
 Instead of filing transactions one at a time, you can ask an AI assistant to do
 it. **Data → Connect an AI Assistant** lists the supported apps found on your
-Mac - Claude Desktop, Cursor, Windsurf, VS Code (Copilot), Gemini CLI and
+Mac - Claude Desktop, Claude Code, Codex (the CLI, the IDE extension and Codex
+in the ChatGPT app), Cursor, Windsurf, VS Code (Copilot), Gemini CLI and
 LM Studio - with a tick beside each one connected. Pick one, then quit and
-reopen it, and ask something like:
+reopen it (or start a new session), and ask something like:
 
 > Group my uncategorised transactions by merchant and suggest a category for each.
 
 For any other app that supports MCP servers, **Copy Setup for Another App…**
-copies the standard setup to paste into its MCP settings (or a command for
-Claude Code). ChatGPT is not supported: its apps only connect to servers on the
-internet, and this one runs on your Mac alone.
+copies the standard setup to paste into its MCP settings. Ordinary ChatGPT chats
+cannot use it: ChatGPT only connects to MCP servers on the internet, and this
+one runs on your Mac alone. Codex inside the ChatGPT app can.
 
 The assistant can list and search your transactions, summarise a month, file
 whole groups into a category, add remarks, and create rules so next month's

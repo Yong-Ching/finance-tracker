@@ -123,8 +123,8 @@ protected PDFs have to be unlocked before uploading.
 ## MCP: sorting with an assistant
 
 `src/mcp/` exposes the data as an MCP server, so any assistant that runs local
-MCP servers (Claude, Cursor, Windsurf, VS Code, Gemini CLI, LM Studio...) can
-read transactions and file them in bulk. Tools: `list_accounts`,
+MCP servers (Claude Desktop and Code, Codex, Cursor, Windsurf, VS Code, Gemini
+CLI, LM Studio...) can read transactions and file them in bulk. Tools: `list_accounts`,
 `list_categories`, `list_rules`, `find_transactions`, `group_transactions`
 (uncategorised rows by merchant, with every id), `summarize`, `categorize`,
 `set_remark`, `create_category`, `create_rule`. There is no delete.
