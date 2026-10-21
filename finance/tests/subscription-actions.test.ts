@@ -104,7 +104,7 @@ describe("subscription actions", () => {
 
   it("a ringgit subscription matches its account's charges and stays out of the SGD total", async () => {
     const rmAccount = db.insert(schema.accounts)
-      .values({ name: "Wallet", institution: "Bank", kind: "ewallet", currency: "MYR", isPocket: false })
+      .values({ name: "Wallet", institution: "Bank", kind: "prepaid", currency: "MYR", isPocket: false })
       .returning({ id: schema.accounts.id }).get().id;
     for (const m of ["04", "05", "06"]) {
       const row = { accountId: rmAccount, txnDate: `2026-${m}-08`, amountCents: -4500, descriptionRaw: "ACME POWER CO" };
