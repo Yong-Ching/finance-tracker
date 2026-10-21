@@ -90,6 +90,8 @@ const EXTRA_CATEGORIES: Array<[string, Bucket]> = [
   // Paying for a friend is an expense; their transfer back goes in the same
   // category and nets it out. What remains is what friends still owe.
   ["Paid for friends", "expense"],
+  // Passports, identity cards, re-entry permits: rare, but large when they come.
+  ["Passport & ID", "expense"],
 ];
 
 function main() {
