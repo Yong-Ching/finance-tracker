@@ -95,8 +95,10 @@ export async function updateTransaction(
   const tx = db.select().from(s.transactions).where(eq(s.transactions.id, txId)).get();
   if (!tx) throw new Error("No such transaction");
 
+  // A remark alone is not a review: an uncategorised row stays in the queue.
+  const classifies = patch.categoryId !== undefined || patch.txnType !== undefined || patch.seen !== undefined;
   db.update(s.transactions)
-    .set({ ...patch, isReviewed: true, updatedAt: sql`(unixepoch())` })
+    .set({ ...patch, isReviewed: classifies || tx.isReviewed, updatedAt: sql`(unixepoch())` })
     .where(eq(s.transactions.id, txId))
     .run();
 
@@ -390,7 +392,8 @@ export async function acceptSuggestion(rawId: number) {
       await updateTransaction(tx.id, {
         categoryId,
         txnType: sug.txnType ?? undefined,
-        note: sug.reasoning,
+        // The reasoning fills an empty remark; it never replaces one.
+        ...(tx.note ? {} : { note: sug.reasoning }),
       });
     }
   } else if (sug.kind === "rule" && sug.pattern && categoryId) {

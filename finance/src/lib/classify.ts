@@ -73,7 +73,9 @@ export function classify(
       seen: override.seen ?? true,
       matchedRuleId: null,
       note: override.note,
-      isReviewed: true,
+      // An override that only carries a remark leaves the row uncategorised,
+      // and so still in the review queue.
+      isReviewed: override.categoryId !== null,
       source: "override",
     };
   }

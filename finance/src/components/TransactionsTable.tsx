@@ -11,6 +11,7 @@ import {
   rejectSuggestion,
 } from "@/lib/actions";
 import type { TxnRow } from "@/lib/queries";
+import { RemarkEditor } from "@/components/RemarkEditor";
 import type { TxnType } from "@/db/schema";
 
 const TYPES: TxnType[] = ["expense", "income", "savings", "debt_repayment", "internal_transfer"];
@@ -228,7 +229,7 @@ export function TransactionsTable({
                     if ((e.target as HTMLElement).closest(INTERACTIVE)) return;
                     toggle(i, e.shiftKey);
                   }}
-                  className={`cursor-pointer border-b border-[var(--border)] last:border-0 select-none ${
+                  className={`group cursor-pointer border-b border-[var(--border)] last:border-0 select-none ${
                     isSelected
                       ? "bg-[color-mix(in_srgb,var(--text-primary)_9%,transparent)]"
                       : !r.isReviewed
@@ -251,7 +252,8 @@ export function TransactionsTable({
                   <td className="px-2 py-1.5 text-[var(--text-secondary)]">{r.accountName}</td>
                   <td className="max-w-[420px] px-2 py-1.5">
                     <span className="line-clamp-2" title={r.descriptionRaw}>{r.descriptionRaw}</span>
-                    {r.note && <span className="mt-0.5 block text-[11px] text-[var(--text-muted)]">{r.note}</span>}
+                    {/* Keyed on the note so a saved remark resets the editor's draft. */}
+                    <RemarkEditor key={r.note ?? ""} id={r.id} note={r.note} />
                     {flags[r.id]?.map((f) => (
                       <span
                         key={f.id}

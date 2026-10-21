@@ -371,7 +371,13 @@ function amountClauses(raw: string | undefined) {
 
 function txnWhere(f: TxnFilters) {
   const clauses = [
-    f.q ? like(sql`upper(${s.transactions.descriptionRaw})`, `%${f.q.toUpperCase()}%`) : undefined,
+    // Search covers remarks too: "dinner with a friend" finds what the statement calls "ACME RESTAURANT".
+    f.q
+      ? or(
+          like(sql`upper(${s.transactions.descriptionRaw})`, `%${f.q.toUpperCase()}%`),
+          like(sql`upper(${s.transactions.note})`, `%${f.q.toUpperCase()}%`),
+        )
+      : undefined,
     f.accountId ? eq(s.transactions.accountId, f.accountId) : undefined,
     f.categoryId === "none"
       ? isNull(s.transactions.categoryId)
