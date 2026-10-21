@@ -21,7 +21,7 @@
       "server.js",
       "splash.html",
       "updates.js",
-      "claude.js",
+      "assistants.js",
       "project-path.json",
       "package.json"
     ],

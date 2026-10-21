@@ -2,7 +2,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { createFinanceServer } from "./tools";
 
 /**
- * The MCP server over stdio, as Claude Desktop and Claude Code launch it.
+ * The MCP server over stdio, as assistants (Claude, Cursor, LM Studio...) launch it.
  *
  * stdout carries the protocol, so nothing else may print there: anything this
  * process wants to say goes to stderr.

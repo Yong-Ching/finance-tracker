@@ -122,7 +122,8 @@ protected PDFs have to be unlocked before uploading.
 
 ## MCP: sorting with an assistant
 
-`src/mcp/` exposes the data as an MCP server, so Claude (Desktop or Code) can
+`src/mcp/` exposes the data as an MCP server, so any assistant that runs local
+MCP servers (Claude, Cursor, Windsurf, VS Code, Gemini CLI, LM Studio...) can
 read transactions and file them in bulk. Tools: `list_accounts`,
 `list_categories`, `list_rules`, `find_transactions`, `group_transactions`
 (uncategorised rows by merchant, with every id), `summarize`, `categorize`,
@@ -138,8 +139,9 @@ which carries the protocol):
     claude mcp add finance-dev -- npm --silent --prefix /path/to/finance run mcp
 
 The release app ships it compiled as `Resources/server/mcp.js`, run by the
-app's own binary as Node; **Data → Connect to Claude…** writes the Claude
-Desktop entry (`desktop/claude.js`).
+app's own binary as Node; **Data → Connect an AI Assistant** writes each
+supported app's MCP settings, or copies the standard `mcpServers` JSON for any
+other (`desktop/assistants.js`).
 
 ## Tests and private data
 

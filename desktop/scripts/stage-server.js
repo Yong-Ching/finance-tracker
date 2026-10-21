@@ -110,7 +110,7 @@ try {
     logLevel: "warning",
   });
 
-  // The MCP server Claude launches (desktop/claude.js), compiled the same way.
+  // The MCP server AI assistants launch (desktop/assistants.js), compiled the same way.
   // Two Next-only imports are swapped for stand-ins: "server-only" is a build
   // guard that throws outside Next, and there are no pages to revalidate.
   step("compiling the MCP server");

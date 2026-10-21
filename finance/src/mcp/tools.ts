@@ -9,8 +9,9 @@ import * as queries from "@/lib/queries";
 import { merchantKey } from "@/lib/subscriptions";
 
 /**
- * The finance data as MCP tools, so an assistant (Claude Desktop, Claude Code)
- * can read transactions and file them in bulk instead of one row at a time.
+ * The finance data as MCP tools, so any MCP-capable assistant (Claude, Cursor,
+ * Gemini CLI, LM Studio...) can read transactions and file them in bulk
+ * instead of one row at a time.
  *
  * Every write goes through the same actions the app's own pages use, so an edit
  * made here is recorded exactly like one made by hand: as an override that

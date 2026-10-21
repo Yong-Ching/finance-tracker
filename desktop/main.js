@@ -11,7 +11,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { FinanceServer, BundledServer } = require("./server");
 const { checkForUpdates } = require("./updates");
-const { connectClaude } = require("./claude");
+const { assistantsMenu } = require("./assistants");
 
 const STATE_FILE = path.join(app.getPath("userData"), "settings.json");
 const LOG_FILE = path.join(app.getPath("userData"), "logs", "server.log");
@@ -266,7 +266,10 @@ function buildMenu() {
     label: "Data",
     submenu: [
       { label: "Show Data Folder", click: () => shell.openPath(DATA_DIR) },
-      { label: "Connect to Claude…", click: () => connectClaude({ win, dataDir: DATA_DIR }) },
+      {
+        label: "Connect an AI Assistant",
+        submenu: assistantsMenu({ getWin: () => win, dataDir: DATA_DIR, onChange: buildMenu }),
+      },
       {
         label: "Edit Settings…",
         click: () => {
