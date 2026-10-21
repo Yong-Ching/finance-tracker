@@ -3,6 +3,8 @@ import Link from "next/link";
 import "./globals.css";
 import { UploadButton } from "@/components/UploadButton";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { CurrencyPicker } from "@/components/CurrencyPicker";
+import { loadFx } from "@/lib/fx-server";
 
 export const metadata: Metadata = {
   title: "Finance",
@@ -19,7 +21,8 @@ const NAV = [
   { href: "/accounts", label: "Accounts" },
 ];
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const fx = await loadFx();
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -52,6 +55,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               ))}
             </nav>
             <div className="ml-auto flex shrink-0 items-center gap-2">
+              <CurrencyPicker fx={fx} />
               <ThemeToggle />
               <UploadButton />
             </div>

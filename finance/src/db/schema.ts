@@ -407,3 +407,19 @@ export const subscriptions = sqliteTable(
 );
 
 export type Subscription = typeof subscriptions.$inferSelect;
+
+/* ------------------------------------------------------------ fx rates */
+
+/**
+ * The latest exchange rate per currency, for showing the whole app in one
+ * currency. Display only: every amount is stored, and summed when the view is
+ * "original", in its account's own currency, and no rate is ever written into
+ * a transaction. One row per currency, as units of it per 1 SGD.
+ */
+export const fxRates = sqliteTable("fx_rates", {
+  currency: text("currency").primaryKey(),
+  perBase: real("per_base").notNull(),
+  /** The date the rate was published, not when it was fetched. */
+  asOf: text("as_of").notNull(),
+  fetchedAt: integer("fetched_at").notNull().default(now),
+});

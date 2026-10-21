@@ -43,6 +43,13 @@
       "when": 1792594688766,
       "tag": "0005_variable_subscriptions",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1792595888101,
+      "tag": "0006_fx_rates",
+      "breakpoints": true
     }
   ]
 }

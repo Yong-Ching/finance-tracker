@@ -42,10 +42,15 @@ link exists the money is reported as *unaccounted* - never as spending, never
 as accounted-for. A transfer across currencies (DBS to Maybank) is linked by
 hand: its two sides are in different currencies, so amounts cannot match.
 
-**Currencies never mix.** Each account has a currency. Combined totals are the
-SGD accounts only; a ringgit account is totalled on its own, in RM. No exchange
-rate is ever applied, so no figure is an estimate. (`BASE_CURRENCY` in
-`src/lib/queries.ts`.)
+**Amounts are stored in their own currency.** Each account has a currency, and
+no rate is ever written into a transaction. In the original view combined totals
+are the SGD accounts only and a ringgit account is totalled on its own, in RM.
+The user can instead pick a currency view (the `currency` cookie, set by
+`CurrencyPicker`): every account is then included and each amount converted at
+the latest ECB rate before summing - display only, marked "≈". Rates are cached
+in `fx_rates` and refreshed from frankfurter.dev at most every 12 hours, only
+while a currency view is in use (`src/lib/fx.ts`, `src/lib/fx-server.ts`;
+queries take an optional `Fx`, and without one behave as the original view).
 
 **A category decides how a transaction counts.** Choosing an expense, income
 or savings category sets the type to match, so money back into a spending
@@ -137,9 +142,10 @@ section is read: the GO+ section after it accrues interest in fractions of a
 sen, which a ledger of whole cents cannot hold, and every purchase is made from
 the wallet anyway, so moves to and from GO+ show as transfers.
 
-Totals are in SGD. An account in another currency (Maybank, in ringgit) is
-shown on its own, in its own currency, and left out of every combined total
-and of subscription detection; no exchange rate is ever applied. Password-
+In the original view totals are in SGD; an account in another currency
+(Maybank, in ringgit) is shown on its own, in its own currency. A currency view
+converts everything at the latest rate for show. Subscriptions are matched and
+detected within each account's own currency either way. Password-
 protected PDFs have to be unlocked before uploading.
 
 ## MCP: sorting with an assistant

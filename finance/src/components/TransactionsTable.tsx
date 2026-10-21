@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { formatCents, formatInColumn } from "@/lib/money";
+import { formatCents } from "@/lib/money";
+import { converting, moneyInColumn, originalTitle, type Fx } from "@/lib/fx";
 import {
   updateTransaction,
   bulkSetCategory,
@@ -42,9 +43,11 @@ export interface RowFlag {
 const INTERACTIVE = "select, button, a, input, textarea, label, option";
 
 export function TransactionsTable({
-  rows, categories, suggestions = {}, flags = {}, total = rows.length, filters,
+  rows, categories, suggestions = {}, flags = {}, total = rows.length, filters, fx,
 }: {
   rows: TxnRow[];
+  /** The currency view: amounts are converted for show, never changed. */
+  fx?: Fx;
   categories: Category[];
   suggestions?: Record<number, RowSuggestion>;
   flags?: Record<number, RowFlag[]>;
@@ -213,7 +216,7 @@ export function TransactionsTable({
               <th className="px-2 py-2 font-medium">Date</th>
               <th className="px-2 py-2 font-medium">Account</th>
               <th className="px-2 py-2 font-medium">Description</th>
-              <th className="px-2 py-2 text-right font-medium">Amount</th>
+              <th className="px-2 py-2 text-right font-medium">Amount{converting(fx) ? ` (${fx.mode})` : ""}</th>
               <th className="px-2 py-2 font-medium">Category</th>
               <th className="px-2 py-2 font-medium">Type</th>
             </tr>
@@ -264,8 +267,11 @@ export function TransactionsTable({
                       </span>
                     ))}
                   </td>
-                  <td className={`tnum whitespace-nowrap px-2 py-1.5 text-right ${r.amountCents < 0 ? "" : "font-medium"}`}>
-                    {formatInColumn(r.amountCents, r.currency)}
+                  <td
+                    className={`tnum whitespace-nowrap px-2 py-1.5 text-right ${r.amountCents < 0 ? "" : "font-medium"}`}
+                    title={originalTitle(r.amountCents, r.currency, fx)}
+                  >
+                    {moneyInColumn(r.amountCents, r.currency, fx)}
                   </td>
                   <td className="px-2 py-1.5">
                     {!r.categoryId && suggestions[r.id] && (

@@ -11,6 +11,8 @@ import { QuickFind } from "@/components/DashboardLive";
 import { FiguresToggle } from "@/components/FiguresToggle";
 import { Card, Stat, Empty } from "@/components/ui";
 import { Fig } from "@/components/Fig";
+import { loadFx } from "@/lib/fx-server";
+import { converting, convert, money, originalTitle, rateLine, totalCurrency } from "@/lib/fx";
 
 export const dynamic = "force-dynamic";
 
@@ -33,19 +35,24 @@ export default async function Dashboard({
     );
   }
 
+  const fx = await loadFx();
+  // Combined figures: SGD accounts in SGD, or every account in the chosen currency.
+  const cur = totalCurrency(fx);
   const period = resolvePeriod(periodParam, months);
   const prev = previousPeriod(period);
-  const t = totals(period);
-  const p = totals({ ...prev, label: "", key: "prev" });
+  const t = totals(period, undefined, fx);
+  const p = totals({ ...prev, label: "", key: "prev" }, undefined, fx);
   // "vs prior" is nonsense when the preceding window is empty (e.g. All time).
   const d = (now: number, before: number) => (p.count > 0 ? now - before : null);
-  const monthly = byMonth();
-  const cats = expenseByCategory(period, undefined, 8);
+  const monthly = byMonth(undefined, fx);
+  const cats = expenseByCategory(period, undefined, 8, fx);
   const catTotal = cats.reduce((a, c) => a + c.totalCents, 0);
-  const balances = balanceSeries(period);
   const accounts = accountCards(period);
+  // The line is the main bank account's; converted point by point in a currency view.
+  const bankCurrency = accounts.find((a) => a.kind === "bank")?.currency ?? cur;
+  const balances = balanceSeries(period).map((b) => ({ ...b, balanceCents: convert(b.balanceCents, bankCurrency, fx).cents }));
   const flags = attention();
-  const subs = subscriptionOverview();
+  const subs = subscriptionOverview(fx);
   const merchants = topMerchants(period, 3);
 
   /**
@@ -80,6 +87,11 @@ export default async function Dashboard({
         <span className="text-[13px] text-[var(--text-muted)]">
           {t.count} transactions &middot; every figure opens what is behind it
         </span>
+        {converting(fx) && (
+          <span className="text-[13px] text-[var(--text-muted)]" title="Stored amounts are unchanged; this is only how they are shown">
+            &middot; all in {fx.mode} at the latest rate, roughly ({rateLine(fx)})
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-2">
           <FiguresToggle />
           <PeriodPicker months={months} value={period.key} />
@@ -88,12 +100,12 @@ export default async function Dashboard({
 
       {/* Totals, plus the money no statement accounts for yet */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <div className="card"><Stat label="Money in" cents={t.incomeCents} delta={d(t.incomeCents, p.incomeCents)} href={drill({ type: "income" })} /></div>
-        <div className="card"><Stat label="Expenses" cents={t.expenseCents} delta={d(t.expenseCents, p.expenseCents)} href={drill({ type: "expense" })} /></div>
-        <div className="card"><Stat label="Savings" cents={t.savingsCents} delta={d(t.savingsCents, p.savingsCents)} href={drill({ type: "savings" })} /></div>
+        <div className="card"><Stat label="Money in" currency={cur} cents={t.incomeCents} delta={d(t.incomeCents, p.incomeCents)} href={drill({ type: "income" })} /></div>
+        <div className="card"><Stat label="Expenses" currency={cur} cents={t.expenseCents} delta={d(t.expenseCents, p.expenseCents)} href={drill({ type: "expense" })} /></div>
+        <div className="card"><Stat label="Savings" currency={cur} cents={t.savingsCents} delta={d(t.savingsCents, p.savingsCents)} href={drill({ type: "savings" })} /></div>
         <div className="card">
           <Stat
-            label="Net" cents={t.netCents} href={drill({})}
+            label="Net" currency={cur} cents={t.netCents} href={drill({})}
             hint={t.savingsRate !== null ? `${Math.round(t.savingsRate * 100)}% savings rate` : undefined}
           />
         </div>
@@ -105,7 +117,7 @@ export default async function Dashboard({
           <div className="hatch w-1.5 shrink-0 rounded-sm" aria-hidden />
           <div>
             <div className="text-[13px] text-[var(--text-muted)]">Unaccounted</div>
-            <div className="tnum mt-1 text-[24px] font-semibold leading-none tracking-tight"><Fig>{formatMoney(t.unaccountedCents)}</Fig></div>
+            <div className="tnum mt-1 text-[24px] font-semibold leading-none tracking-tight"><Fig>{formatMoney(t.unaccountedCents, cur)}</Fig></div>
             <div className="mt-1.5 text-[12px] text-[var(--text-muted)]">in pockets, not in Expenses</div>
           </div>
         </Link>
@@ -113,7 +125,10 @@ export default async function Dashboard({
 
       <div className="grid gap-3 lg:grid-cols-12">
         {/* Balance */}
-        <Card className="lg:col-span-8" title="Cash in DBS" subtitle="Running balance; click a day to see it">
+        <Card className="lg:col-span-8" title="Cash in DBS"
+          subtitle={converting(fx) && bankCurrency !== fx.mode
+            ? `Running balance in ${fx.mode} at the latest rate; click a day to see it`
+            : "Running balance; click a day to see it"}>
           {balances.length > 1 ? <BalanceLine data={balances} height={236} /> : <Empty>Not enough data in this period.</Empty>}
         </Card>
 
@@ -124,7 +139,9 @@ export default async function Dashboard({
         >
           <div className="flex items-baseline justify-between">
             <h2 className="text-[14px] font-semibold">Where it went</h2>
-            <span className="text-[12px] text-[var(--text-muted)]">{cats.reduce((a, c) => a + c.count, 0)} txns</span>
+            <span className="text-[12px] text-[var(--text-muted)]">
+              {cats.reduce((a, c) => a + c.count, 0)} txns{converting(fx) ? ` · in ${cur}` : ""}
+            </span>
           </div>
           {cats.length ? (
             <>
@@ -155,7 +172,10 @@ export default async function Dashboard({
 
       <div className="grid gap-3 lg:grid-cols-12">
         {/* Month by month */}
-        <Card className="lg:col-span-8" title="Month by month" subtitle="Click a month to open it">
+        <Card
+          className="lg:col-span-8" title="Month by month"
+          subtitle={converting(fx) ? `In ${cur} at the latest rate; click a month to open it` : "Click a month to open it"}
+        >
           <div className="overflow-x-auto">
             <table className="w-full min-w-[460px] text-[14px]">
               <thead>
@@ -191,6 +211,7 @@ export default async function Dashboard({
         <div className="grid min-w-0 content-start gap-3 lg:col-span-4">
           <Card className="min-w-0" title="Quick find" subtitle="A merchant, or an amount like ~12.50">
             <QuickFind
+              fx={fx}
               from={period.from}
               to={period.to}
               initial={merchants[0] ?? ""}
@@ -200,7 +221,7 @@ export default async function Dashboard({
 
           <Card
             title="Subscriptions"
-            subtitle={subs.active.length ? <><Fig>{formatMoney(subs.monthlyTotalCents)}</Fig> a month</> : undefined}
+            subtitle={subs.active.length ? <><Fig>{formatMoney(subs.monthlyTotalCents, subs.totalCurrency)}</Fig> a month</> : undefined}
             action={<Link href="/subscriptions" className="text-[12px] text-[var(--text-secondary)] hover:underline">All</Link>}
           >
             {subs.active.length ? (
@@ -212,7 +233,9 @@ export default async function Dashboard({
                       {(s.health.kind === "overdue" || s.health.kind === "no_charges") && (
                         <span className="text-[12px] text-[var(--status-warning)]">check</span>
                       )}
-                      <span className="tnum text-[var(--text-secondary)]"><Fig>{formatMoney(s.monthlyCents, s.currency)}</Fig></span>
+                      <span className="tnum text-[var(--text-secondary)]" title={originalTitle(s.monthlyCents, s.currency, fx)}>
+                        <Fig>{money(s.monthlyCents, s.currency, fx)}</Fig>
+                      </span>
                     </Link>
                   </li>
                 ))}
@@ -255,8 +278,11 @@ export default async function Dashboard({
             <div className="text-[13px] text-[var(--text-secondary)]">
               {a.name}{a.isPocket && " (pocket)"}
             </div>
-            <div className="tnum mt-1 text-[20px] font-semibold leading-none">
-              {a.balanceCents !== null ? <Fig>{formatMoney(a.balanceCents, a.currency)}</Fig> : <span className="text-[var(--text-muted)]">no data</span>}
+            <div
+              className="tnum mt-1 text-[20px] font-semibold leading-none"
+              title={a.balanceCents !== null ? originalTitle(a.balanceCents, a.currency, fx) : undefined}
+            >
+              {a.balanceCents !== null ? <Fig>{money(a.balanceCents, a.currency, fx)}</Fig> : <span className="text-[var(--text-muted)]">no data</span>}
             </div>
             <div className="mt-1.5 text-[12px] text-[var(--text-muted)]">
               {a.lastStatement ? `to ${a.lastStatement}` : "no statement uploaded"}

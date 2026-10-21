@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 import { quickSearch } from "@/lib/actions";
 import { formatMoney } from "@/lib/money";
+import { converting, money, originalTitle, type Fx } from "@/lib/fx";
 import { Fig } from "@/components/Fig";
 
 type Result = Awaited<ReturnType<typeof quickSearch>>;
@@ -13,9 +14,9 @@ type Result = Awaited<ReturnType<typeof quickSearch>>;
  * Without script it is still a GET form into the Transactions page.
  */
 export function QuickFind({
-  from, to, initial, examples,
+  from, to, initial, examples, fx,
 }: {
-  from: string; to: string; initial: string; examples: string[];
+  from: string; to: string; initial: string; examples: string[]; fx: Fx;
 }) {
   const [term, setTerm] = useState(initial);
   const [result, setResult] = useState<Result | null>(null);
@@ -68,7 +69,9 @@ export function QuickFind({
                   <li key={r.id} className="flex items-baseline gap-2">
                     <span className="tnum shrink-0 text-[12px] text-[var(--text-muted)]">{r.txnDate.slice(5)}</span>
                     <span className="min-w-0 flex-1 truncate">{r.descriptionRaw}</span>
-                    <span className="tnum shrink-0"><Fig>{formatMoney(r.amountCents, r.currency)}</Fig></span>
+                    <span className="tnum shrink-0" title={originalTitle(r.amountCents, r.currency, fx)}>
+                      <Fig>{money(r.amountCents, r.currency, fx)}</Fig>
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -76,7 +79,7 @@ export function QuickFind({
                 {result.total} match{result.total === 1 ? "" : "es"},{" "}
                 {result.sums.map((s, i) => (
                   <span key={s.currency}>
-                    {i > 0 && " · "}<Fig>{formatMoney(Math.abs(s.cents), s.currency)}</Fig> {s.cents < 0 ? "out" : "in"}
+                    {i > 0 && " · "}<Fig>{converting(fx) ? "≈" : ""}{formatMoney(Math.abs(s.cents), s.currency)}</Fig> {s.cents < 0 ? "out" : "in"}
                   </span>
                 ))}{" "}
                 &rarr;

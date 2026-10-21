@@ -2,6 +2,8 @@ import Link from "next/link";
 import { subscriptionOverview, allAccounts, type SubscriptionRow } from "@/lib/queries";
 import { suggestName } from "@/lib/subscriptions";
 import { formatMoney } from "@/lib/money";
+import { loadFx } from "@/lib/fx-server";
+import { converting, money, originalTitle, type Fx } from "@/lib/fx";
 import { Card, Stat, Empty } from "@/components/ui";
 import { CandidateActions, NewSubscriptionForm, SubscriptionRowActions } from "@/components/SubscriptionActions";
 import { EVERY, Health, StatementLink, th, td, rowCls as row, headRow } from "@/components/subscription-ui";
@@ -24,7 +26,7 @@ function Count({ label, n, hint, warn }: { label: string; n: number; hint?: stri
   );
 }
 
-function SubscriptionTable({ rows, muted = false }: { rows: SubscriptionRow[]; muted?: boolean }) {
+function SubscriptionTable({ rows, fx, muted = false }: { rows: SubscriptionRow[]; fx: Fx; muted?: boolean }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[900px] text-[13px]">
@@ -56,19 +58,21 @@ function SubscriptionTable({ rows, muted = false }: { rows: SubscriptionRow[]; m
                   {` · ${r.charges.length} charge${r.charges.length === 1 ? "" : "s"}`}
                 </Link>
               </td>
-              <td className="px-3 first:pl-0 last:pr-0 tnum py-2 text-right">
-                {r.variableAmount && <span className="text-[var(--text-muted)]" title="Varies - the median of the last six charges">~</span>}
-                {formatMoney(r.typicalCents, r.currency)}
+              <td className="px-3 first:pl-0 last:pr-0 tnum py-2 text-right" title={originalTitle(r.typicalCents, r.currency, fx)}>
+                {r.variableAmount && !converting(fx) && <span className="text-[var(--text-muted)]" title="Varies - the median of the last six charges">~</span>}
+                {money(r.typicalCents, r.currency, fx)}
                 <span className="text-[var(--text-muted)]"> / {EVERY[r.cadence]}</span>
                 {r.variableAmount && <span className="block text-[11px] text-[var(--text-muted)]">varies</span>}
               </td>
-              <td className="px-3 first:pl-0 last:pr-0 tnum py-2 text-right font-medium">{formatMoney(r.monthlyCents, r.currency)}</td>
+              <td className="px-3 first:pl-0 last:pr-0 tnum py-2 text-right font-medium" title={originalTitle(r.monthlyCents, r.currency, fx)}>
+                {money(r.monthlyCents, r.currency, fx)}
+              </td>
               <td className="px-3 first:pl-0 last:pr-0 tnum py-2 text-[var(--text-secondary)]">
                 {r.lastCharge ? (
                   <>
                     {r.lastCharge.txnDate}
                     {Math.abs(r.lastCharge.amountCents) !== r.typicalCents && (
-                      <span className="text-[var(--text-muted)]"> · {formatMoney(Math.abs(r.lastCharge.amountCents), r.currency)}</span>
+                      <span className="text-[var(--text-muted)]"> · {money(Math.abs(r.lastCharge.amountCents), r.currency, fx)}</span>
                     )}
                   </>
                 ) : "-"}
@@ -97,7 +101,8 @@ function SubscriptionTable({ rows, muted = false }: { rows: SubscriptionRow[]; m
 }
 
 export default async function SubscriptionsPage() {
-  const o = subscriptionOverview();
+  const fx = await loadFx();
+  const o = subscriptionOverview(fx);
   const accounts = allAccounts();
   const asOf = [...new Set(o.active.map((r) => r.asOf).filter(Boolean))].sort().at(-1);
 
@@ -113,13 +118,13 @@ export default async function SubscriptionsPage() {
 
       <div className="card grid grid-cols-2 divide-x divide-y divide-[var(--border)] sm:grid-cols-4 sm:divide-y-0">
         <Stat
-          label="Per month" cents={o.monthlyTotalCents}
+          label="Per month" cents={o.monthlyTotalCents} currency={o.totalCurrency}
           hint={o.otherMonthlyTotals.length
             ? `plus ${o.otherMonthlyTotals.map((t) => formatMoney(t.cents, t.currency)).join(", ")}, kept apart`
-            : "yearly plans spread over 12"}
+            : converting(fx) ? "every currency, at the latest rate" : "yearly plans spread over 12"}
         />
         <Stat
-          label="Per year" cents={o.monthlyTotalCents * 12}
+          label="Per year" cents={o.monthlyTotalCents * 12} currency={o.totalCurrency}
           hint={o.otherMonthlyTotals.length
             ? `plus ${o.otherMonthlyTotals.map((t) => formatMoney(t.cents * 12, t.currency)).join(", ")}`
             : undefined}
@@ -133,7 +138,7 @@ export default async function SubscriptionsPage() {
 
       <Card title="Active" subtitle={o.active.length ? "Largest monthly cost first" : undefined}>
         {o.active.length ? (
-          <SubscriptionTable rows={o.active} />
+          <SubscriptionTable rows={o.active} fx={fx} />
         ) : (
           <Empty>Nothing tracked yet. Track one from the suggestions below, or add it by hand.</Empty>
         )}
@@ -168,9 +173,9 @@ export default async function SubscriptionsPage() {
                       </Link>
                       <span className="text-[11px] text-[var(--text-muted)]"> · {c.accountName}</span>
                     </td>
-                    <td className="px-3 first:pl-0 last:pr-0 tnum py-2 text-right">
-                      {c.variableAmount && <span className="text-[var(--text-muted)]" title="Varies - the median charge">~</span>}
-                      {formatMoney(c.amountCents, c.currency)}
+                    <td className="px-3 first:pl-0 last:pr-0 tnum py-2 text-right" title={originalTitle(c.amountCents, c.currency, fx)}>
+                      {c.variableAmount && !converting(fx) && <span className="text-[var(--text-muted)]" title="Varies - the median charge">~</span>}
+                      {money(c.amountCents, c.currency, fx)}
                       <span className="text-[var(--text-muted)]"> / {EVERY[c.cadence]}</span>
                       {c.variableAmount && <span className="block text-[11px] text-[var(--text-muted)]">varies</span>}
                     </td>
@@ -185,7 +190,9 @@ export default async function SubscriptionsPage() {
                           {[...c.charges].reverse().map((x) => (
                             <li key={x.id} className="tnum flex gap-3">
                               <span>{x.txnDate}</span>
-                              <span className="w-20 text-right">{formatMoney(Math.abs(x.amountCents), c.currency)}</span>
+                              <span className="w-24 text-right" title={originalTitle(Math.abs(x.amountCents), c.currency, fx)}>
+                                {money(Math.abs(x.amountCents), c.currency, fx)}
+                              </span>
                               <StatementLink st={x.statementId ? o.statements[x.statementId] : undefined} compact />
                             </li>
                           ))}
@@ -219,7 +226,7 @@ export default async function SubscriptionsPage() {
 
       {o.cancelled.length > 0 && (
         <Card title={`Cancelled (${o.cancelled.length})`} subtitle="Kept for the record; not in the totals.">
-          <SubscriptionTable rows={o.cancelled} muted />
+          <SubscriptionTable rows={o.cancelled} fx={fx} muted />
         </Card>
       )}
     </div>

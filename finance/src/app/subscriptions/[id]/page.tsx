@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { subscriptionDetail } from "@/lib/queries";
 import { formatMoney } from "@/lib/money";
+import { loadFx } from "@/lib/fx-server";
+import { convert, money, originalTitle } from "@/lib/fx";
 import { Card, Stat, Empty } from "@/components/ui";
 import { SubscriptionRowActions } from "@/components/SubscriptionActions";
 import { EVERY, Health, StatementLink, th, td, rowCls, headRow } from "@/components/subscription-ui";
@@ -13,6 +15,9 @@ export default async function SubscriptionPage({ params }: { params: Promise<{ i
   const d = Number.isInteger(id) && id > 0 ? subscriptionDetail(id) : null;
   if (!d) notFound();
   const { sub, history, statements } = d;
+  const fx = await loadFx();
+  // The stat tiles, in the chosen view's currency.
+  const tile = (cents: number) => convert(cents, sub.currency, fx);
   const missed = history.filter((e) => e.kind === "missed").length;
 
   return (
@@ -48,9 +53,9 @@ export default async function SubscriptionPage({ params }: { params: Promise<{ i
       </div>
 
       <div className="card grid grid-cols-2 divide-x divide-y divide-[var(--border)] sm:grid-cols-4 sm:divide-y-0">
-        <Stat label="Paid so far" cents={d.paidCents} currency={sub.currency} hint={sub.charges.length ? `since ${sub.charges[0].txnDate}` : undefined} />
-        <Stat label="Average charge" cents={d.averageCents} currency={sub.currency} hint={`${sub.charges.length} charge${sub.charges.length === 1 ? "" : "s"}`} />
-        <Stat label="Per month" cents={sub.status === "active" ? sub.monthlyCents : 0} currency={sub.currency} hint={sub.status === "active" ? undefined : "cancelled"} />
+        <Stat label="Paid so far" cents={tile(d.paidCents).cents} currency={tile(d.paidCents).currency} hint={sub.charges.length ? `since ${sub.charges[0].txnDate}` : undefined} />
+        <Stat label="Average charge" cents={tile(d.averageCents).cents} currency={tile(d.averageCents).currency} hint={`${sub.charges.length} charge${sub.charges.length === 1 ? "" : "s"}`} />
+        <Stat label="Per month" cents={tile(sub.status === "active" ? sub.monthlyCents : 0).cents} currency={tile(0).currency} hint={sub.status === "active" ? undefined : "cancelled"} />
         <div className="px-4 py-3">
           <div className="text-[11px] uppercase tracking-wide text-[var(--text-muted)]">Next expected</div>
           <div className="tnum mt-1 text-[26px] font-semibold leading-none tracking-tight">
@@ -105,8 +110,8 @@ export default async function SubscriptionPage({ params }: { params: Promise<{ i
                       <td className={`${td} tnum whitespace-nowrap`}>{e.charge.txnDate}</td>
                       <td className={`${td} text-[var(--text-secondary)]`}>{e.charge.descriptionRaw}</td>
                       <td className={`${td} text-[var(--text-secondary)]`}>{e.charge.categoryName ?? "-"}</td>
-                      <td className={`${td} tnum text-right`}>
-                        {formatMoney(Math.abs(e.charge.amountCents), sub.currency)}
+                      <td className={`${td} tnum text-right`} title={originalTitle(Math.abs(e.charge.amountCents), sub.currency, fx)}>
+                        {money(Math.abs(e.charge.amountCents), sub.currency, fx)}
                         {!sub.variableAmount && Math.abs(e.charge.amountCents) !== sub.amountCents && (
                           <span
                             className="block text-[11px] text-[var(--text-muted)]"

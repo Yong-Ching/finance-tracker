@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { formatCents, formatInColumn } from "@/lib/money";
+import { formatCents, formatInColumn, formatMoney } from "@/lib/money";
+import { loadFx } from "@/lib/fx-server";
+import { converting } from "@/lib/fx";
 import { parseAmountQuery } from "@/lib/amount-query";
 import {
   listTransactions, allCategories, allAccounts, suggestionsByTxnId, flagsByTxnId, getSubscription,
@@ -33,7 +35,8 @@ export default async function TransactionsPage({
     perPage: PER_PAGE,
   };
 
-  const { rows, total, sums } = listTransactions(filters);
+  const fx = await loadFx();
+  const { rows, total, sums } = listTransactions(filters, fx);
   const subscription = filters.subscriptionId ? getSubscription(filters.subscriptionId) : null;
   const badAmount = filters.amount !== undefined && parseAmountQuery(filters.amount) === null;
   const categories = allCategories();
@@ -72,9 +75,11 @@ export default async function TransactionsPage({
         <span className="text-[12px] text-[var(--text-muted)]">
           {total} matching &middot;{" "}
           <span className="tnum">
-            {sums.length ? sums.map((s) => formatInColumn(s.cents, s.currency)).join(" · ") : formatCents(0)}
+            {sums.length
+              ? sums.map((s) => (converting(fx) ? `≈${formatMoney(s.cents, s.currency)}` : formatInColumn(s.cents, s.currency))).join(" · ")
+              : formatCents(0)}
           </span>{" "}
-          net
+          net{converting(fx) && rows.some((r) => r.currency !== fx.mode) ? ", at the latest rate" : ""}
         </span>
       </div>
 
@@ -158,6 +163,7 @@ export default async function TransactionsPage({
 
       {rows.length ? (
         <TransactionsTable
+          fx={fx}
           rows={rows}
           categories={categories}
           suggestions={suggestions}

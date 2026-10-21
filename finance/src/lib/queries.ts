@@ -8,6 +8,7 @@ import {
   assess, detectCandidates, matches, merchantKey, monthlyCents, timeline, typicalCents,
   type Candidate, type ChargeRow, type SubscriptionState, type TimelineEntry,
 } from "./subscriptions";
+import { BASE_CURRENCY, converting, factor, totalCurrency, type Fx } from "./fx";
 
 /** txnTypes that count toward the dashboard's three buckets. */
 const REPORTING = ["income", "expense", "savings", "debt_repayment"] as const;
@@ -23,23 +24,38 @@ export function availableMonths(): string[] {
 }
 
 /**
- * Totals are in SGD. An account in another currency (Maybank, in ringgit) is
- * shown on its own in its own currency, and left out of every combined total:
- * adding RM 100 to S$100 would make S$200 out of money that is neither.
+ * In the original view (no `fx`, or fx.mode "original") totals are in SGD. An
+ * account in another currency (Maybank, in ringgit) is shown on its own in its
+ * own currency, and left out of every combined total: adding RM 100 to S$100
+ * would make S$200 out of money that is neither.
+ *
+ * In a currency view (see fx.ts) every account is included and each amount is
+ * converted at the latest rate before it is summed - a rough figure, by the
+ * user's choice. Stored amounts never change.
  */
-export const BASE_CURRENCY = "SGD";
+export { BASE_CURRENCY };
 const inBaseCurrency = sql`${s.transactions.accountId} in
   (select id from accounts where currency = ${BASE_CURRENCY})`;
 
-/** One account in its own currency, or every base-currency account together. */
-const forAccount = (accountId?: number) =>
-  accountId ? eq(s.transactions.accountId, accountId) : inBaseCurrency;
+/** One account, or every account a combined total covers in this view. */
+const forAccount = (accountId?: number, fx?: Fx) =>
+  accountId ? eq(s.transactions.accountId, accountId) : converting(fx) ? undefined : inBaseCurrency;
 
-const inPeriod = (p: Period, accountId?: number) =>
+/** The amount column - or, in a currency view, the amount converted by its account's rate. */
+function amt(fx?: Fx) {
+  if (!converting(fx)) return sql`${s.transactions.amountCents}`;
+  const cases = allAccounts().map((a) => sql`when ${a.id} then ${factor(a.currency, fx)}`);
+  return sql`(${s.transactions.amountCents} * (case ${s.transactions.accountId} ${sql.join(cases, sql` `)} else 1 end))`;
+}
+
+/** sum() of amounts in the view's currency, as whole cents. */
+const sumAmt = (fx?: Fx) => sql<number>`cast(round(coalesce(sum(${amt(fx)}), 0)) as integer)`;
+
+const inPeriod = (p: Period, accountId?: number, fx?: Fx) =>
   and(
     gte(s.transactions.txnDate, p.from),
     lte(s.transactions.txnDate, p.to),
-    forAccount(accountId),
+    forAccount(accountId, fx),
     // A quarantined statement's rows never enter a total.
     sql`(${s.transactions.statementId} is null or ${s.transactions.statementId} in
          (select id from statements where status = 'imported'))`,
@@ -56,15 +72,15 @@ export interface Totals {
   count: number;
 }
 
-export function totals(p: Period, accountId?: number): Totals {
+export function totals(p: Period, accountId?: number, fx?: Fx): Totals {
   const rows = db
     .select({
       txnType: s.transactions.txnType,
-      total: sql<number>`sum(${s.transactions.amountCents})`,
+      total: sumAmt(fx),
       n: sql<number>`count(*)`,
     })
     .from(s.transactions)
-    .where(inPeriod(p, accountId))
+    .where(inPeriod(p, accountId, fx))
     .groupBy(s.transactions.txnType)
     .all();
 
@@ -77,11 +93,11 @@ export function totals(p: Period, accountId?: number): Totals {
   // A transfer is unaccounted until a confirmed link ties it to real spending.
   const unaccountedCents = Math.abs(
     db
-      .select({ total: sql<number>`coalesce(sum(${s.transactions.amountCents}), 0)` })
+      .select({ total: sumAmt(fx) })
       .from(s.transactions)
       .where(
         and(
-          inPeriod(p, accountId),
+          inPeriod(p, accountId, fx),
           eq(s.transactions.txnType, "internal_transfer"),
           sql`${s.transactions.id} not in (
                 select source_txn_id from transfer_links where status = 'confirmed')`,
@@ -109,15 +125,15 @@ export interface MonthRow {
   transferCents: number;
 }
 
-export function byMonth(accountId?: number): MonthRow[] {
+export function byMonth(accountId?: number, fx?: Fx): MonthRow[] {
   const rows = db
     .select({
       month: sql<string>`substr(${s.transactions.txnDate}, 1, 7)`,
       txnType: s.transactions.txnType,
-      total: sql<number>`sum(${s.transactions.amountCents})`,
+      total: sumAmt(fx),
     })
     .from(s.transactions)
-    .where(forAccount(accountId))
+    .where(forAccount(accountId, fx))
     .groupBy(sql`1`, s.transactions.txnType)
     .orderBy(sql`1`)
     .all();
@@ -147,7 +163,7 @@ export interface CategorySlice {
 }
 
 /** Expense breakdown, capped at the top 5 plus "Other". */
-export function expenseByCategory(p: Period, accountId?: number, cap = 5): CategorySlice[] {
+export function expenseByCategory(p: Period, accountId?: number, cap = 5, fx?: Fx): CategorySlice[] {
   const rows = db
     .select({
       categoryId: s.transactions.categoryId,
@@ -155,14 +171,14 @@ export function expenseByCategory(p: Period, accountId?: number, cap = 5): Categ
       // Signed spend, not abs(): money back into an expense category (a friend
       // repaying) nets it down, and a category repaid more than was spent in
       // the period shows as negative rather than as spending.
-      totalCents: sql<number>`-sum(${s.transactions.amountCents})`,
+      totalCents: sql<number>`-${sumAmt(fx)}`,
       count: sql<number>`count(*)`,
     })
     .from(s.transactions)
     .leftJoin(s.categories, eq(s.transactions.categoryId, s.categories.id))
-    .where(and(inPeriod(p, accountId), inArray(s.transactions.txnType, ["expense", "debt_repayment"])))
+    .where(and(inPeriod(p, accountId, fx), inArray(s.transactions.txnType, ["expense", "debt_repayment"])))
     .groupBy(s.transactions.categoryId)
-    .orderBy(desc(sql`-sum(${s.transactions.amountCents})`))
+    .orderBy(desc(sql`-sum(${amt(fx)})`))
     .all();
 
   const grand = rows.reduce((a, r) => a + r.totalCents, 0) || 1;
@@ -398,7 +414,11 @@ function txnWhere(f: TxnFilters) {
   return clauses.length ? and(...clauses) : undefined;
 }
 
-export function listTransactions(f: TxnFilters): { rows: TxnRow[]; total: number; sums: CurrencySum[] } {
+/**
+ * Rows always come in their own currency (the page converts them for show).
+ * The sums are per currency - or, in a currency view, one converted sum.
+ */
+export function listTransactions(f: TxnFilters, fx?: Fx): { rows: TxnRow[]; total: number; sums: CurrencySum[] } {
   const where = txnWhere(f);
   const perPage = f.perPage ?? 100;
   const page = Math.max(1, f.page ?? 1);
@@ -445,11 +465,12 @@ export function listTransactions(f: TxnFilters): { rows: TxnRow[]; total: number
     .all()
     .sort((a, b) => Number(b.currency === BASE_CURRENCY) - Number(a.currency === BASE_CURRENCY));
 
-  return {
-    rows,
-    total: agg.reduce((a, r) => a + r.n, 0),
-    sums: agg.map(({ currency, cents }) => ({ currency, cents })),
-  };
+  const total = agg.reduce((a, r) => a + r.n, 0);
+  if (converting(fx)) {
+    const cents = Math.round(agg.reduce((a, r) => a + r.cents * factor(r.currency, fx), 0));
+    return { rows, total, sums: agg.length ? [{ currency: fx.mode, cents }] : [] };
+  }
+  return { rows, total, sums: agg.map(({ currency, cents }) => ({ currency, cents })) };
 }
 
 export function allCategories() {
@@ -676,9 +697,11 @@ export interface SubscriptionOverview {
   active: SubscriptionRow[];
   cancelled: SubscriptionRow[];
   candidates: (Candidate & { accountName: string })[];
-  /** Base-currency subscriptions only. */
+  /** Base-currency subscriptions only - or, in a currency view, all of them converted. */
   monthlyTotalCents: number;
-  /** Every other currency's, each on its own - never converted, never added in. */
+  /** The currency monthlyTotalCents is in. */
+  totalCurrency: string;
+  /** Original view: every other currency's, each on its own, never added in. */
   otherMonthlyTotals: { currency: string; cents: number }[];
   needsAttention: number;
 }
@@ -787,7 +810,7 @@ function statementRefs(charges: ChargeRow[]): Record<number, StatementRef> {
   );
 }
 
-export function subscriptionOverview(): SubscriptionOverview & { statements: Record<number, StatementRef> } {
+export function subscriptionOverview(fx?: Fx): SubscriptionOverview & { statements: Record<number, StatementRef> } {
   const charges = outflows();
   const ends = statementEnds();
   const accounts = accountInfo();
@@ -795,21 +818,32 @@ export function subscriptionOverview(): SubscriptionOverview & { statements: Rec
 
   const rows = subs.filter((x) => x.status !== "dismissed").map((x) => toRow(x, charges, ends, accounts));
   // Base currency first; within a currency, the largest monthly cost first.
+  // Original view: base currency first, then the largest monthly cost within
+  // each. Currency view: largest first across all of them, as converted.
   const active = rows.filter((r) => r.status === "active").sort((a, b) =>
-    Number(b.currency === BASE_CURRENCY) - Number(a.currency === BASE_CURRENCY) || b.monthlyCents - a.monthlyCents);
+    converting(fx)
+      ? b.monthlyCents * factor(b.currency, fx) - a.monthlyCents * factor(a.currency, fx)
+      : Number(b.currency === BASE_CURRENCY) - Number(a.currency === BASE_CURRENCY) || b.monthlyCents - a.monthlyCents);
   const candidates = detectCandidates(charges, subs.map((x) => withCurrency(x, accounts)), ends).map((c) => ({
     ...c,
     accountName: accounts.get(c.accountId)?.name ?? "",
   }));
   const totals = new Map<string, number>();
   for (const r of active) totals.set(r.currency, (totals.get(r.currency) ?? 0) + r.monthlyCents);
+  const shownIn = totalCurrency(fx);
+  const monthlyTotalCents = converting(fx)
+    ? Math.round([...totals].reduce((a, [c, cents]) => a + cents * factor(c, fx), 0))
+    : totals.get(BASE_CURRENCY) ?? 0;
 
   return {
     active,
     cancelled: rows.filter((r) => r.status === "cancelled"),
     candidates,
-    monthlyTotalCents: totals.get(BASE_CURRENCY) ?? 0,
-    otherMonthlyTotals: [...totals].filter(([c]) => c !== BASE_CURRENCY).map(([currency, cents]) => ({ currency, cents })),
+    monthlyTotalCents,
+    totalCurrency: shownIn,
+    otherMonthlyTotals: converting(fx)
+      ? []
+      : [...totals].filter(([c]) => c !== BASE_CURRENCY).map(([currency, cents]) => ({ currency, cents })),
     needsAttention: active.filter((r) => r.health.kind === "overdue" || r.health.kind === "no_charges").length,
     statements: statementRefs(candidates.flatMap((c) => c.charges)),
   };

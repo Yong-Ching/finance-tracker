@@ -591,9 +591,10 @@ export async function quickSearch(raw: string, rawFrom?: string, rawTo?: string)
 
   const { parseAmountQuery } = await import("./amount-query");
   const { listTransactions } = await import("./queries");
+  const { loadFx } = await import("./fx-server");
   const byAmount = parseAmountQuery(term) !== null;
   const filters = { ...(byAmount ? { amount: term } : { q: term }), from, to };
-  const { rows, total, sums } = listTransactions({ ...filters, perPage: 3 });
+  const { rows, total, sums } = listTransactions({ ...filters, perPage: 3 }, await loadFx());
 
   const params = new URLSearchParams(Object.entries(filters).filter(([, v]) => v) as [string, string][]);
   return {

@@ -23,9 +23,19 @@ alongside, and currently reads:
 | Maybank savings account           | MYR      | your Malaysian account                      |
 | Touch 'n Go eWallet history       | MYR      | what was spent from the e-wallet (any range of months in one PDF) |
 
-Totals are in SGD. A ringgit account is shown on its own, in RM, and never
-added into the SGD totals: no exchange rate is ever applied, so no figure is
-approximate. Maybank and Touch 'n Go send password-protected PDFs; the app
+The currency picker in the top bar chooses how money is shown:
+
+- **Original currency** (the default): totals are in SGD, and a ringgit account
+  is shown on its own, in RM, never added into them. No rate, so no figure is
+  approximate.
+- **All in SGD** or **All in MYR**: every account is added together, each
+  amount converted at the latest exchange rate (European Central Bank reference
+  rates, fetched at most twice a day; only the currency codes are sent). These
+  are rough figures, marked with "≈"; hover one to see the original amount.
+  Nothing stored changes - switching back shows the exact original amounts.
+  Statements, Reconcile and Review always show original amounts.
+
+Maybank and Touch 'n Go send password-protected PDFs; the app
 cannot open those yet, so save an unprotected copy first and upload that.
 
 ```
