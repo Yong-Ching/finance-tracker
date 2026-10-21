@@ -58,17 +58,17 @@ function SubscriptionTable({ rows, muted = false }: { rows: SubscriptionRow[]; m
               </td>
               <td className="px-3 first:pl-0 last:pr-0 tnum py-2 text-right">
                 {r.variableAmount && <span className="text-[var(--text-muted)]" title="Varies - the median of the last six charges">~</span>}
-                {formatMoney(r.typicalCents)}
+                {formatMoney(r.typicalCents, r.currency)}
                 <span className="text-[var(--text-muted)]"> / {EVERY[r.cadence]}</span>
                 {r.variableAmount && <span className="block text-[11px] text-[var(--text-muted)]">varies</span>}
               </td>
-              <td className="px-3 first:pl-0 last:pr-0 tnum py-2 text-right font-medium">{formatMoney(r.monthlyCents)}</td>
+              <td className="px-3 first:pl-0 last:pr-0 tnum py-2 text-right font-medium">{formatMoney(r.monthlyCents, r.currency)}</td>
               <td className="px-3 first:pl-0 last:pr-0 tnum py-2 text-[var(--text-secondary)]">
                 {r.lastCharge ? (
                   <>
                     {r.lastCharge.txnDate}
                     {Math.abs(r.lastCharge.amountCents) !== r.typicalCents && (
-                      <span className="text-[var(--text-muted)]"> · {formatMoney(Math.abs(r.lastCharge.amountCents))}</span>
+                      <span className="text-[var(--text-muted)]"> · {formatMoney(Math.abs(r.lastCharge.amountCents), r.currency)}</span>
                     )}
                   </>
                 ) : "-"}
@@ -84,6 +84,7 @@ function SubscriptionTable({ rows, muted = false }: { rows: SubscriptionRow[]; m
                   amountCents={r.amountCents}
                   variableAmount={r.variableAmount}
                   cadence={r.cadence}
+                  currency={r.currency}
                   priceNowCents={!muted && r.health.kind === "price_changed" ? r.health.nowCents : undefined}
                 />
               </td>
@@ -111,8 +112,18 @@ export default async function SubscriptionsPage() {
       </div>
 
       <div className="card grid grid-cols-2 divide-x divide-y divide-[var(--border)] sm:grid-cols-4 sm:divide-y-0">
-        <Stat label="Per month" cents={o.monthlyTotalCents} hint="yearly plans spread over 12" />
-        <Stat label="Per year" cents={o.monthlyTotalCents * 12} />
+        <Stat
+          label="Per month" cents={o.monthlyTotalCents}
+          hint={o.otherMonthlyTotals.length
+            ? `plus ${o.otherMonthlyTotals.map((t) => formatMoney(t.cents, t.currency)).join(", ")}, kept apart`
+            : "yearly plans spread over 12"}
+        />
+        <Stat
+          label="Per year" cents={o.monthlyTotalCents * 12}
+          hint={o.otherMonthlyTotals.length
+            ? `plus ${o.otherMonthlyTotals.map((t) => formatMoney(t.cents * 12, t.currency)).join(", ")}`
+            : undefined}
+        />
         <Count label="Active" n={o.active.length} hint={asOf ? `statements to ${asOf}` : undefined} />
         <Count
           label="Needs a look" n={o.needsAttention} warn={o.needsAttention > 0}
@@ -159,7 +170,7 @@ export default async function SubscriptionsPage() {
                     </td>
                     <td className="px-3 first:pl-0 last:pr-0 tnum py-2 text-right">
                       {c.variableAmount && <span className="text-[var(--text-muted)]" title="Varies - the median charge">~</span>}
-                      {formatMoney(c.amountCents)}
+                      {formatMoney(c.amountCents, c.currency)}
                       <span className="text-[var(--text-muted)]"> / {EVERY[c.cadence]}</span>
                       {c.variableAmount && <span className="block text-[11px] text-[var(--text-muted)]">varies</span>}
                     </td>
@@ -174,7 +185,7 @@ export default async function SubscriptionsPage() {
                           {[...c.charges].reverse().map((x) => (
                             <li key={x.id} className="tnum flex gap-3">
                               <span>{x.txnDate}</span>
-                              <span className="w-20 text-right">{formatMoney(Math.abs(x.amountCents))}</span>
+                              <span className="w-20 text-right">{formatMoney(Math.abs(x.amountCents), c.currency)}</span>
                               <StatementLink st={x.statementId ? o.statements[x.statementId] : undefined} compact />
                             </li>
                           ))}
@@ -203,7 +214,7 @@ export default async function SubscriptionsPage() {
         title="Add by hand"
         subtitle="For a yearly plan, or anything the suggestions miss. It matches charges by the text below, within 10% of the amount - or at any amount, for a bill that varies."
       >
-        <NewSubscriptionForm accounts={accounts.map((a) => ({ id: a.id, name: a.name }))} />
+        <NewSubscriptionForm accounts={accounts.map((a) => ({ id: a.id, name: a.name, currency: a.currency }))} />
       </Card>
 
       {o.cancelled.length > 0 && (

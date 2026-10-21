@@ -102,6 +102,26 @@ describe("subscription actions", () => {
     await actions.deleteSubscription(sid);
   });
 
+  it("a ringgit subscription matches its account's charges and stays out of the SGD total", async () => {
+    const rmAccount = db.insert(schema.accounts)
+      .values({ name: "Wallet", institution: "Bank", kind: "ewallet", currency: "MYR", isPocket: false })
+      .returning({ id: schema.accounts.id }).get().id;
+    for (const m of ["04", "05", "06"]) {
+      const row = { accountId: rmAccount, txnDate: `2026-${m}-08`, amountCents: -4500, descriptionRaw: "ACME POWER CO" };
+      db.insert(schema.transactions).values({ ...row, txnType: "expense", dedupeHash: dedupeHash(row) }).run();
+    }
+    const sid = await actions.createSubscription({
+      name: "Power", pattern: "ACME POWER", accountId: rmAccount, amountCents: 4500, cadence: "monthly",
+    });
+    const o = queries.subscriptionOverview();
+    const row = o.active.find((r) => r.id === sid)!;
+    expect(row).toMatchObject({ currency: "MYR", monthlyCents: 4500 });
+    expect(row.charges).toHaveLength(3);
+    expect(o.monthlyTotalCents).toBe(0);
+    expect(o.otherMonthlyTotals).toEqual([{ currency: "MYR", cents: 4500 }]);
+    await actions.deleteSubscription(sid);
+  });
+
   it("rejects input that is not a subscription", async () => {
     const ok = { name: "X", pattern: "X", accountId: null, amountCents: 100, cadence: "monthly" as const };
     await expect(actions.createSubscription({ ...ok, amountCents: -5 })).rejects.toThrow();

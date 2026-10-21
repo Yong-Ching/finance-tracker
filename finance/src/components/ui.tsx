@@ -25,9 +25,9 @@ export function Card({
 }
 
 export function Stat({
-  label, cents, hint, delta, tone = "neutral", href,
+  label, cents, currency, hint, delta, tone = "neutral", href,
 }: {
-  label: string; cents: number; hint?: string;
+  label: string; cents: number; currency?: string; hint?: string;
   delta?: number | null; tone?: "neutral" | "warning";
   /** When given, the whole tile drills into the transactions behind it. */
   href?: string;
@@ -40,12 +40,12 @@ export function Stat({
           tone === "warning" ? "text-[var(--status-warning)]" : ""
         }`}
       >
-        <Fig>{formatMoney(cents)}</Fig>
+        <Fig>{formatMoney(cents, currency)}</Fig>
       </div>
       <div className="mt-1.5 flex items-center gap-2 text-[11px] text-[var(--text-muted)]">
         {delta !== undefined && delta !== null && (
           <span className="tnum">
-            {delta >= 0 ? "+" : "-"}<Fig>{formatMoney(Math.abs(delta))}</Fig> vs prior
+            {delta >= 0 ? "+" : "-"}<Fig>{formatMoney(Math.abs(delta), currency)}</Fig> vs prior
           </span>
         )}
         {hint && <span>{hint}</span>}

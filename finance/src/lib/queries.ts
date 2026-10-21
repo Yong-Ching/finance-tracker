@@ -663,6 +663,8 @@ export function matchingTransactionIds(f: TxnFilters): number[] {
 
 export interface SubscriptionRow extends s.Subscription, SubscriptionState {
   accountName: string | null;
+  /** The account's currency, or the base currency for "any account". */
+  currency: string;
   /** The charge expected each cycle: the amount on record, or a variable bill's recent median. */
   typicalCents: number;
   monthlyCents: number;
@@ -674,11 +676,18 @@ export interface SubscriptionOverview {
   active: SubscriptionRow[];
   cancelled: SubscriptionRow[];
   candidates: (Candidate & { accountName: string })[];
+  /** Base-currency subscriptions only. */
   monthlyTotalCents: number;
+  /** Every other currency's, each on its own - never converted, never added in. */
+  otherMonthlyTotals: { currency: string; cents: number }[];
   needsAttention: number;
 }
 
-/** Outflows from imported statements - the only rows a subscription can match. */
+/**
+ * Outflows from imported statements - the only rows a subscription can match.
+ * Every currency: each charge carries its account's, and amounts are only
+ * compared within one (a subscription follows its account's currency).
+ */
 function outflows(): ChargeRow[] {
   return db
     .select({
@@ -689,16 +698,16 @@ function outflows(): ChargeRow[] {
       descriptionRaw: s.transactions.descriptionRaw,
       categoryName: s.categories.name,
       statementId: s.transactions.statementId,
+      currency: s.accounts.currency,
     })
     .from(s.transactions)
+    .innerJoin(s.accounts, eq(s.accounts.id, s.transactions.accountId))
     .leftJoin(s.categories, eq(s.categories.id, s.transactions.categoryId))
     .where(
       and(
         sql`${s.transactions.amountCents} < 0`,
         // A transfer to a pocket is not a charge; what it bought is, on the pocket's statement.
         ne(s.transactions.txnType, "internal_transfer"),
-        // Amounts and cadences are compared across charges, so one currency only.
-        inBaseCurrency,
         sql`(${s.transactions.statementId} is null or ${s.transactions.statementId} in
              (select id from statements where status = 'imported'))`,
       ),
@@ -717,12 +726,18 @@ function statementEnds(): Map<number, string> {
   return new Map(rows.filter((r) => r.end).map((r) => [r.accountId, r.end]));
 }
 
+/** A subscription with the currency it is kept in: its account's, or the base one for "any account". */
+function withCurrency(x: s.Subscription, accounts: Map<number, { name: string; currency: string }>) {
+  return { ...x, currency: (x.accountId !== null && accounts.get(x.accountId)?.currency) || BASE_CURRENCY };
+}
+
 function toRow(
-  x: s.Subscription,
+  raw: s.Subscription,
   charges: ChargeRow[],
   ends: Map<number, string>,
-  accountName: Map<number, string>,
+  accounts: Map<number, { name: string; currency: string }>,
 ): SubscriptionRow {
+  const x = withCurrency(raw, accounts);
   // Judge against the account the charges actually come from.
   const first = assess(x, charges, null);
   const acct = x.accountId ?? first.lastCharge?.accountId ?? null;
@@ -733,13 +748,13 @@ function toRow(
     ...x,
     ...state,
     asOf,
-    accountName: x.accountId !== null ? accountName.get(x.accountId) ?? null : null,
+    accountName: x.accountId !== null ? accounts.get(x.accountId)?.name ?? null : null,
     typicalCents: typical,
     monthlyCents: monthlyCents(typical, x.cadence),
   };
 }
 
-const accountNames = () => new Map(allAccounts().map((a) => [a.id, a.name]));
+const accountInfo = () => new Map(allAccounts().map((a) => [a.id, { name: a.name, currency: a.currency }]));
 
 export interface StatementRef {
   id: number;
@@ -775,21 +790,26 @@ function statementRefs(charges: ChargeRow[]): Record<number, StatementRef> {
 export function subscriptionOverview(): SubscriptionOverview & { statements: Record<number, StatementRef> } {
   const charges = outflows();
   const ends = statementEnds();
-  const names = accountNames();
+  const accounts = accountInfo();
   const subs = db.select().from(s.subscriptions).orderBy(asc(s.subscriptions.name)).all();
 
-  const rows = subs.filter((x) => x.status !== "dismissed").map((x) => toRow(x, charges, ends, names));
-  const active = rows.filter((r) => r.status === "active").sort((a, b) => b.monthlyCents - a.monthlyCents);
-  const candidates = detectCandidates(charges, subs, ends).map((c) => ({
+  const rows = subs.filter((x) => x.status !== "dismissed").map((x) => toRow(x, charges, ends, accounts));
+  // Base currency first; within a currency, the largest monthly cost first.
+  const active = rows.filter((r) => r.status === "active").sort((a, b) =>
+    Number(b.currency === BASE_CURRENCY) - Number(a.currency === BASE_CURRENCY) || b.monthlyCents - a.monthlyCents);
+  const candidates = detectCandidates(charges, subs.map((x) => withCurrency(x, accounts)), ends).map((c) => ({
     ...c,
-    accountName: names.get(c.accountId) ?? "",
+    accountName: accounts.get(c.accountId)?.name ?? "",
   }));
+  const totals = new Map<string, number>();
+  for (const r of active) totals.set(r.currency, (totals.get(r.currency) ?? 0) + r.monthlyCents);
 
   return {
     active,
     cancelled: rows.filter((r) => r.status === "cancelled"),
     candidates,
-    monthlyTotalCents: active.reduce((a, r) => a + r.monthlyCents, 0),
+    monthlyTotalCents: totals.get(BASE_CURRENCY) ?? 0,
+    otherMonthlyTotals: [...totals].filter(([c]) => c !== BASE_CURRENCY).map(([currency, cents]) => ({ currency, cents })),
     needsAttention: active.filter((r) => r.health.kind === "overdue" || r.health.kind === "no_charges").length,
     statements: statementRefs(candidates.flatMap((c) => c.charges)),
   };
@@ -803,7 +823,8 @@ export function getSubscription(subscriptionId: number) {
 export function subscriptionChargeIds(subscriptionId: number): number[] {
   const sub = db.select().from(s.subscriptions).where(eq(s.subscriptions.id, subscriptionId)).get();
   if (!sub) return [];
-  return outflows().filter((c) => matches(c, sub)).map((c) => c.id);
+  const tracked = withCurrency(sub, accountInfo());
+  return outflows().filter((c) => matches(c, tracked)).map((c) => c.id);
 }
 
 export interface SubscriptionDetail {
@@ -819,7 +840,7 @@ export interface SubscriptionDetail {
 export function subscriptionDetail(subscriptionId: number): SubscriptionDetail | null {
   const x = db.select().from(s.subscriptions).where(eq(s.subscriptions.id, subscriptionId)).get();
   if (!x || x.status === "dismissed") return null;
-  const sub = toRow(x, outflows(), statementEnds(), accountNames());
+  const sub = toRow(x, outflows(), statementEnds(), accountInfo());
   const paidCents = sub.charges.reduce((a, c) => a + Math.abs(c.amountCents), 0);
   return {
     sub,

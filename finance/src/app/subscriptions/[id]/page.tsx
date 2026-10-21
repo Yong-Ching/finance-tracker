@@ -27,8 +27,8 @@ export default async function SubscriptionPage({ params }: { params: Promise<{ i
           <p className="mt-0.5 text-[12px] text-[var(--text-muted)]">
             Matches &ldquo;{sub.pattern}&rdquo;{sub.accountName ? ` on ${sub.accountName}` : " on any account"},
             {" "}{sub.variableAmount
-              ? <>at any amount (about {formatMoney(sub.typicalCents)})</>
-              : <>{formatMoney(sub.amountCents)} &plusmn;10%</>}
+              ? <>at any amount (about {formatMoney(sub.typicalCents, sub.currency)})</>
+              : <>{formatMoney(sub.amountCents, sub.currency)} &plusmn;10%</>}
             {" "}every {EVERY[sub.cadence]} &middot; <Health r={sub} />
           </p>
         </div>
@@ -41,15 +41,16 @@ export default async function SubscriptionPage({ params }: { params: Promise<{ i
             amountCents={sub.amountCents}
             variableAmount={sub.variableAmount}
             cadence={sub.cadence}
+            currency={sub.currency}
             priceNowCents={sub.status === "active" && sub.health.kind === "price_changed" ? sub.health.nowCents : undefined}
           />
         </div>
       </div>
 
       <div className="card grid grid-cols-2 divide-x divide-y divide-[var(--border)] sm:grid-cols-4 sm:divide-y-0">
-        <Stat label="Paid so far" cents={d.paidCents} hint={sub.charges.length ? `since ${sub.charges[0].txnDate}` : undefined} />
-        <Stat label="Average charge" cents={d.averageCents} hint={`${sub.charges.length} charge${sub.charges.length === 1 ? "" : "s"}`} />
-        <Stat label="Per month" cents={sub.status === "active" ? sub.monthlyCents : 0} hint={sub.status === "active" ? undefined : "cancelled"} />
+        <Stat label="Paid so far" cents={d.paidCents} currency={sub.currency} hint={sub.charges.length ? `since ${sub.charges[0].txnDate}` : undefined} />
+        <Stat label="Average charge" cents={d.averageCents} currency={sub.currency} hint={`${sub.charges.length} charge${sub.charges.length === 1 ? "" : "s"}`} />
+        <Stat label="Per month" cents={sub.status === "active" ? sub.monthlyCents : 0} currency={sub.currency} hint={sub.status === "active" ? undefined : "cancelled"} />
         <div className="px-4 py-3">
           <div className="text-[11px] uppercase tracking-wide text-[var(--text-muted)]">Next expected</div>
           <div className="tnum mt-1 text-[26px] font-semibold leading-none tracking-tight">
@@ -105,14 +106,14 @@ export default async function SubscriptionPage({ params }: { params: Promise<{ i
                       <td className={`${td} text-[var(--text-secondary)]`}>{e.charge.descriptionRaw}</td>
                       <td className={`${td} text-[var(--text-secondary)]`}>{e.charge.categoryName ?? "-"}</td>
                       <td className={`${td} tnum text-right`}>
-                        {formatMoney(Math.abs(e.charge.amountCents))}
+                        {formatMoney(Math.abs(e.charge.amountCents), sub.currency)}
                         {!sub.variableAmount && Math.abs(e.charge.amountCents) !== sub.amountCents && (
                           <span
                             className="block text-[11px] text-[var(--text-muted)]"
                             title="Differs from the amount on record, within the 10% tolerance"
                           >
                             {Math.abs(e.charge.amountCents) > sub.amountCents ? "+" : "-"}
-                            {formatMoney(Math.abs(Math.abs(e.charge.amountCents) - sub.amountCents))}
+                            {formatMoney(Math.abs(Math.abs(e.charge.amountCents) - sub.amountCents), sub.currency)}
                           </span>
                         )}
                       </td>

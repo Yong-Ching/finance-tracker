@@ -212,7 +212,7 @@ export default async function Dashboard({
                       {(s.health.kind === "overdue" || s.health.kind === "no_charges") && (
                         <span className="text-[12px] text-[var(--status-warning)]">check</span>
                       )}
-                      <span className="tnum text-[var(--text-secondary)]"><Fig>{formatMoney(s.monthlyCents)}</Fig></span>
+                      <span className="tnum text-[var(--text-secondary)]"><Fig>{formatMoney(s.monthlyCents, s.currency)}</Fig></span>
                     </Link>
                   </li>
                 ))}

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   createSubscription, updateSubscription, setSubscriptionStatus, dismissCandidate, deleteSubscription,
 } from "@/lib/actions";
-import { formatCents, parseCents } from "@/lib/money";
+import { formatCents, formatMoney, parseCents } from "@/lib/money";
 import type { SubscriptionCadence } from "@/db/schema";
 
 const CADENCES: SubscriptionCadence[] = ["weekly", "monthly", "quarterly", "yearly"];
@@ -92,10 +92,10 @@ export function CandidateActions({
 /* --------------------------------------------------- tracked subscriptions */
 
 export function SubscriptionRowActions({
-  id, status, name, pattern, amountCents, variableAmount, cadence, priceNowCents,
+  id, status, name, pattern, amountCents, variableAmount, cadence, currency, priceNowCents,
 }: {
   id: number; status: "active" | "cancelled"; name: string; pattern: string; amountCents: number;
-  variableAmount: boolean; cadence: SubscriptionCadence; priceNowCents?: number;
+  variableAmount: boolean; cadence: SubscriptionCadence; currency: string; priceNowCents?: number;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState({
@@ -154,7 +154,7 @@ export function SubscriptionRowActions({
           className={btn} disabled={pending} title="The latest charge differs from the amount on record"
           onClick={() => run(() => updateSubscription(id, { amountCents: priceNowCents }))}
         >
-          Use S${formatCents(priceNowCents)}
+          Use {formatMoney(priceNowCents, currency)}
         </button>
       )}
       <button className={btn} onClick={() => setEditing(true)}>Edit</button>
@@ -181,12 +181,14 @@ export function SubscriptionRowActions({
 
 /* ------------------------------------------------------------- by hand */
 
-export function NewSubscriptionForm({ accounts }: { accounts: { id: number; name: string }[] }) {
+export function NewSubscriptionForm({ accounts }: { accounts: { id: number; name: string; currency: string }[] }) {
   const blank = { name: "", pattern: "", accountId: "" as number | "", amount: "", variable: false, cadence: "monthly" as SubscriptionCadence };
   const [f, setF] = useState(blank);
   const { pending, run } = useAction();
   const cents = toCents(f.amount);
   const ready = f.name.trim() && f.pattern.trim() && cents !== null;
+  // A subscription is kept in its account's currency; "any account" means any SGD one.
+  const sym = formatMoney(0, accounts.find((a) => a.id === f.accountId)?.currency).replace(/[\d.,]+$/, "").trim();
 
   return (
     <div className="flex flex-wrap items-end gap-3">
@@ -204,12 +206,12 @@ export function NewSubscriptionForm({ accounts }: { accounts: { id: number; name
           value={f.accountId} onChange={(e) => setF({ ...f, accountId: e.target.value ? Number(e.target.value) : "" })}
           className={input}
         >
-          <option value="">Any</option>
-          {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          <option value="">Any SGD account</option>
+          {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.currency !== "SGD" ? ` (${a.currency})` : ""}</option>)}
         </select>
       </label>
       <label className={label}>
-        {f.variable ? "Typical amount (S$)" : "Amount (S$)"}
+        {f.variable ? `Typical amount (${sym})` : `Amount (${sym})`}
         <input value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} inputMode="decimal" placeholder="0.00" className={`${input} tnum w-24 text-right`} />
       </label>
       <span className="pb-1.5"><VariesBox checked={f.variable} onChange={(v) => setF({ ...f, variable: v })} /></span>

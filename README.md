@@ -229,7 +229,10 @@ dashboard (in its own currency for a ringgit wallet).
 ### 5. Track your subscriptions
 
 **Subscriptions** shows what you pay on repeat, and what that adds up to per
-month and per year.
+month and per year. A subscription is kept in its account's currency: one on
+Maybank or Touch 'n Go is shown in RM and totalled on its own, never added to
+the S$ figure. **Any SGD account** matches across your SGD accounts; for a
+ringgit bill, pick its account.
 
 1. Under **Suggested**, the app lists charges that repeat at a steady amount and
    interval (an Apple plan, a phone bill). Click **Track** and give it a name, or

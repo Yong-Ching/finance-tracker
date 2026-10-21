@@ -71,6 +71,22 @@ describe("a bill that varies", () => {
   });
 });
 
+describe("another currency", () => {
+  const rm = (date: string, cents: number) => ({ ...charge(date, cents, POWER, 3), currency: "MYR" });
+
+  it("matches only charges in the subscription's own currency", () => {
+    const sub = { pattern: "ACME POWER", accountId: null, amountCents: 8000, currency: "MYR" };
+    expect(matches(rm("2026-03-08", 8000), sub)).toBe(true);
+    expect(matches(charge("2026-03-08", 8000, POWER), sub)).toBe(false);
+    expect(matches(rm("2026-03-08", 8000), { ...sub, currency: undefined })).toBe(false);
+  });
+  it("proposes a ringgit bill in ringgit", () => {
+    const rows = ["02", "03", "04", "05", "06"].map((m) => rm(`2026-${m}-08`, 12000));
+    const [c] = detectCandidates(rows, [], new Map([[3, "2026-06-30"]]));
+    expect(c).toMatchObject({ accountId: 3, currency: "MYR", amountCents: 12000 });
+  });
+});
+
 describe("cadence arithmetic", () => {
   it("expresses every cadence per month so they can be summed", () => {
     expect(monthlyCents(1200, "monthly")).toBe(1200);

@@ -17,6 +17,8 @@ export interface ChargeRow {
   categoryName?: string | null;
   /** The statement the charge was read from - the bill it can be traced to. */
   statementId?: number | null;
+  /** The account's currency; absent means the base currency. */
+  currency?: string;
 }
 
 export interface TrackedLike {
@@ -25,6 +27,8 @@ export interface TrackedLike {
   amountCents: number;
   /** A bill that differs every cycle: matched on description and account alone. */
   variableAmount?: boolean;
+  /** Charges in another currency never match: S$10 and RM10 are not the same bill. */
+  currency?: string;
 }
 
 /* --------------------------------------------------------------- matching */
@@ -69,6 +73,7 @@ export function amountMatches(chargeCents: number, expectedCents: number): boole
 export function matches(charge: ChargeRow, sub: TrackedLike): boolean {
   if (charge.amountCents >= 0) return false;
   if (sub.accountId !== null && charge.accountId !== sub.accountId) return false;
+  if ((charge.currency ?? "SGD") !== (sub.currency ?? "SGD")) return false;
   const pattern = normalise(sub.pattern);
   if (!pattern || !normalise(charge.descriptionRaw).includes(pattern)) return false;
   return sub.variableAmount || amountMatches(charge.amountCents, sub.amountCents);
@@ -223,6 +228,8 @@ export interface Candidate {
   amountCents: number; // median charge, positive
   /** The amount differs from charge to charge (a utility bill), so match any. */
   variableAmount: boolean;
+  /** The account's: amounts are only ever compared within one currency. */
+  currency: string;
   cadence: SubscriptionCadence;
   count: number;
   firstDate: string;
@@ -305,7 +312,7 @@ export function detectCandidates(
         : null;
 
       return {
-        pattern, accountId, amountCents, variableAmount, cadence,
+        pattern, accountId, amountCents, variableAmount, currency: cl[0].currency ?? "SGD", cadence,
         count: cl.length, firstDate: cl[0].txnDate, lastDate: last.txnDate, categoryName,
         charges: cl,
       };
@@ -325,7 +332,10 @@ export function detectCandidates(
     const isKnown = (c: Candidate) => known.some((k) => matches({ ...c.charges.at(-1)!, amountCents: -c.amountCents }, k));
     out.push(...found.filter((c) => !isKnown(c)));
   }
-  return out.sort((a, b) => monthlyCents(b.amountCents, b.cadence) - monthlyCents(a.amountCents, a.cadence));
+  // Base currency first; within a currency, the largest monthly cost first.
+  return out.sort((a, b) =>
+    Number(b.currency === "SGD") - Number(a.currency === "SGD") ||
+    monthlyCents(b.amountCents, b.cadence) - monthlyCents(a.amountCents, a.cadence));
 }
 
 /** "APPLE.COM/BILL" -> "Apple.com/bill": a starting point the user can rename. */

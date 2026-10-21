@@ -22,7 +22,7 @@ export function Health({ r }: { r: SubscriptionRow }) {
       </span>
     );
   }
-  if (h.kind === "price_changed") return <span>Now {formatMoney(h.nowCents)}</span>;
+  if (h.kind === "price_changed") return <span>Now {formatMoney(h.nowCents, r.currency)}</span>;
   return <span className="text-[var(--text-muted)]">On track</span>;
 }
 
