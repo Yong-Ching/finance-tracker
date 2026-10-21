@@ -15,6 +15,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
+/** The release app's name in an assistant's settings; the development app adds "-dev". */
 const NAME = "finance-tracker";
 const home = (...p) => path.join(os.homedir(), ...p);
 const appSupport = (...p) => home("Library", "Application Support", ...p);
@@ -36,7 +37,7 @@ const ASSISTANTS = [
   { id: "lmstudio", name: "LM Studio", file: home(".lmstudio", "mcp.json"), key: "mcpServers", local: true },
 ];
 
-/** How an assistant should launch the server. */
+/** How an assistant launches the release app's server: its compiled copy, on this app's own binary. */
 function serverEntry(dataDir) {
   return {
     command: process.execPath,
@@ -45,15 +46,36 @@ function serverEntry(dataDir) {
   };
 }
 
+/**
+ * How an assistant launches the development app's server: the source, through
+ * tsx, on the system Node the app found. The full path to node matters - an
+ * assistant starts it with Finder's PATH, which has no node in it.
+ */
+function sourceEntry(node, projectDir) {
+  return {
+    command: node,
+    args: [
+      path.join(projectDir, "node_modules", "tsx", "dist", "cli.mjs"),
+      // Explicit: an assistant starts it from its own folder, where the "@/"
+      // paths in finance/tsconfig.json would not be found.
+      "--tsconfig",
+      path.join(projectDir, "tsconfig.json"),
+      "--conditions=react-server",
+      path.join(projectDir, "src", "mcp", "server.ts"),
+    ],
+    env: { FINANCE_DATA_DIR: path.join(projectDir, "data") },
+  };
+}
+
 const quote = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 
-function claudeCodeCommand(entry) {
+function claudeCodeCommand(entry, name = NAME) {
   const env = Object.entries(entry.env).map(([k, v]) => `-e ${k}=${quote(v)}`).join(" ");
-  return `claude mcp add ${NAME} --scope user ${env} -- ${quote(entry.command)} ${entry.args.map(quote).join(" ")}`;
+  return `claude mcp add ${name} --scope user ${env} -- ${quote(entry.command)} ${entry.args.map(quote).join(" ")}`;
 }
 
 /** The standard form most MCP apps accept, to paste into one not listed here. */
-const genericSetup = (entry) => JSON.stringify({ mcpServers: { [NAME]: entry } }, null, 2);
+const genericSetup = (entry, name = NAME) => JSON.stringify({ mcpServers: { [name]: entry } }, null, 2);
 
 /** An app counts as installed when the folder its settings live in exists. */
 const installed = (a) => fs.existsSync(path.dirname(a.file));
@@ -69,9 +91,9 @@ function readConfig(a) {
   return parsed;
 }
 
-function isConnected(a) {
+function isConnected(a, name = NAME) {
   try {
-    return !!readConfig(a)[a.key]?.[NAME];
+    return !!readConfig(a)[a.key]?.[name];
   } catch {
     return false;
   }
@@ -109,7 +131,7 @@ async function checkLocation(show) {
 }
 
 /** Connects or disconnects one app, after saying what that means. */
-async function toggle(a, { show, dataDir }) {
+async function toggle(a, { show, entry, name }) {
   if (!(await checkLocation(show))) return;
   let config;
   try {
@@ -124,7 +146,7 @@ async function toggle(a, { show, dataDir }) {
     return;
   }
 
-  if (config[a.key]?.[NAME]) {
+  if (config[a.key]?.[name]) {
     const { response } = await show({
       type: "question",
       message: `Disconnect Finance Tracker from ${a.name}?`,
@@ -133,7 +155,7 @@ async function toggle(a, { show, dataDir }) {
       cancelId: 1,
     });
     if (response !== 0) return;
-    delete config[a.key][NAME];
+    delete config[a.key][name];
     writeConfig(a, config);
     return;
   }
@@ -146,8 +168,7 @@ async function toggle(a, { show, dataDir }) {
     cancelId: 1,
   });
   if (response !== 0) return;
-  const entry = serverEntry(dataDir);
-  config[a.key] = { ...(config[a.key] ?? {}), [NAME]: a.shape ? a.shape(entry) : entry };
+  config[a.key] = { ...(config[a.key] ?? {}), [name]: a.shape ? a.shape(entry) : entry };
   writeConfig(a, config);
   await show({
     type: "info",
@@ -159,9 +180,8 @@ async function toggle(a, { show, dataDir }) {
   });
 }
 
-async function copySetup({ show, dataDir }) {
+async function copySetup({ show, entry, name }) {
   if (!(await checkLocation(show))) return;
-  const entry = serverEntry(dataDir);
   const buttons = ["Copy Setup (JSON)", "Copy Claude Code Command", "Cancel"];
   const { response } = await show({
     type: "question",
@@ -174,7 +194,7 @@ async function copySetup({ show, dataDir }) {
     cancelId: 2,
   });
   if (response === 2) return;
-  await clipboard.writeText(response === 0 ? genericSetup(entry) : claudeCodeCommand(entry));
+  await clipboard.writeText(response === 0 ? genericSetup(entry, name) : claudeCodeCommand(entry, name));
   await show({
     type: "info",
     message: "Copied",
@@ -190,10 +210,11 @@ async function copySetup({ show, dataDir }) {
  *
  * @param {object} opts
  * @param {() => Electron.BrowserWindow|null} opts.getWin
- * @param {string} opts.dataDir   where the database lives
+ * @param {object} opts.entry     how to launch the server (serverEntry or sourceEntry)
+ * @param {string} [opts.name]    its name in the assistant's settings
  * @param {() => void} opts.onChange  rebuilds the menu so the ticks stay true
  */
-function assistantsMenu({ getWin, dataDir, onChange }) {
+function assistantsMenu({ getWin, entry, name = NAME, onChange }) {
   const show = (options) => {
     const win = getWin();
     return win ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options);
@@ -203,16 +224,16 @@ function assistantsMenu({ getWin, dataDir, onChange }) {
     ...found.map((a) => ({
       label: a.local ? `${a.name} (runs on this Mac)` : a.name,
       type: "checkbox",
-      checked: isConnected(a),
+      checked: isConnected(a, name),
       click: async () => {
-        await toggle(a, { show, dataDir });
+        await toggle(a, { show, entry, name });
         onChange();
       },
     })),
     ...(found.length ? [] : [{ label: "No supported assistant found", enabled: false }]),
     { type: "separator" },
-    { label: "Copy Setup for Another App…", click: () => copySetup({ show, dataDir }) },
+    { label: "Copy Setup for Another App…", click: () => copySetup({ show, entry, name }) },
   ];
 }
 
-module.exports = { assistantsMenu, ASSISTANTS, serverEntry, claudeCodeCommand, genericSetup, toggle, isConnected };
+module.exports = { assistantsMenu, ASSISTANTS, serverEntry, sourceEntry, claudeCodeCommand, genericSetup, toggle, isConnected };

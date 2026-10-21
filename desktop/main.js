@@ -11,7 +11,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { FinanceServer, BundledServer } = require("./server");
 const { checkForUpdates } = require("./updates");
-const { assistantsMenu } = require("./assistants");
+const { assistantsMenu, serverEntry, sourceEntry } = require("./assistants");
 
 const STATE_FILE = path.join(app.getPath("userData"), "settings.json");
 const LOG_FILE = path.join(app.getPath("userData"), "logs", "server.log");
@@ -268,7 +268,7 @@ function buildMenu() {
       { label: "Show Data Folder", click: () => shell.openPath(DATA_DIR) },
       {
         label: "Connect an AI Assistant",
-        submenu: assistantsMenu({ getWin: () => win, dataDir: DATA_DIR, onChange: buildMenu }),
+        submenu: assistantsMenu({ getWin: () => win, entry: serverEntry(DATA_DIR), onChange: buildMenu }),
       },
       {
         label: "Edit Settings…",
@@ -343,6 +343,18 @@ function buildMenu() {
             if (await chooseProjectDir()) restart();
           },
         },
+        // Needs the system Node the server found, so it appears once the server is up.
+        ...(server?.node && server.projectDir
+          ? [{
+              label: "Connect an AI Assistant",
+              submenu: assistantsMenu({
+                getWin: () => win,
+                entry: sourceEntry(server.node, server.projectDir),
+                name: "finance-tracker-dev",
+                onChange: buildMenu,
+              }),
+            }]
+          : []),
         { type: "separator" },
         { role: "toggleDevTools" },
       ],

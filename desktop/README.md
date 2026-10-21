@@ -51,7 +51,9 @@ still serves while there is a type error.
 
 Other items under **Develop**: Rebuild and Restart (⇧⌘R), Open in Browser,
 Show Project Folder, Show Server Log, Change Project Folder… (use this if you
-move the repo), and the Chromium dev tools.
+move the repo), Connect an AI Assistant (the MCP server on `finance/data`,
+registered as `finance-tracker-dev` so it never clashes with the release app's
+entry), and the Chromium dev tools.
 
 ## Files
 
