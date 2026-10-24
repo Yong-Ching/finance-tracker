@@ -48,6 +48,16 @@ export default async function Dashboard({
   const cats = expenseByCategory(period, undefined, 8, fx);
   const catTotal = cats.reduce((a, c) => a + c.totalCents, 0);
   const accounts = accountCards(period);
+  // What the accounts hold now (a card's balance owed counts against it). Only
+  // accounts in the total's currency, unless a currency view converts the rest.
+  const balanceTotal = accounts.reduce(
+    (acc, a) => {
+      if (a.balanceCents === null || (!converting(fx) && a.currency !== cur)) return acc;
+      const c = convert(a.balanceCents, a.currency, fx);
+      return { cents: acc.cents + c.cents, n: acc.n + 1, approx: acc.approx || a.currency !== cur };
+    },
+    { cents: 0, n: 0, approx: false },
+  );
   // The line is the main bank account's; converted point by point in a currency view.
   const bankCurrency = accounts.find((a) => a.kind === "bank")?.currency ?? cur;
   const balances = balanceSeries(period).map((b) => ({ ...b, balanceCents: convert(b.balanceCents, bankCurrency, fx).cents }));
@@ -100,7 +110,12 @@ export default async function Dashboard({
 
       {/* Totals, plus the money no statement accounts for yet */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <div className="card"><Stat label="Money in" currency={cur} cents={t.incomeCents} delta={d(t.incomeCents, p.incomeCents)} href={drill({ type: "income" })} /></div>
+        <div className="card">
+          <Stat
+            label="Balance" currency={cur} cents={balanceTotal.cents} href="/accounts"
+            hint={`now, across ${balanceTotal.n} accounts${balanceTotal.approx ? " (≈)" : ""}`}
+          />
+        </div>
         <div className="card"><Stat label="Expenses" currency={cur} cents={t.expenseCents} delta={d(t.expenseCents, p.expenseCents)} href={drill({ type: "expense" })} /></div>
         <div className="card"><Stat label="Savings" currency={cur} cents={t.savingsCents} delta={d(t.savingsCents, p.savingsCents)} href={drill({ type: "savings" })} /></div>
         <div className="card">

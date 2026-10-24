@@ -267,6 +267,9 @@ ringgit bill, pick its account.
 - Use the period picker (top right) to switch between a single month, the
   last 3 months, year to date or all time.
 - Click any figure to see the transactions behind it.
+- **Balance** is what your accounts hold now, from each one's latest
+  statement, with a credit card's amount owed taken off. It does not follow the
+  period picker.
 - **Review** shows Claude's suggestions, if you turned that on. Accepting a
   suggested rule also backfills it.
 
