@@ -2,11 +2,12 @@
 
 import { useRouter } from "next/navigation";
 import {
-  Bar, BarChart, CartesianGrid, Cell, LabelList, Line, LineChart,
+  Bar, BarChart, CartesianGrid, Cell, LabelList, Line, LineChart, Pie, PieChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { formatCents } from "@/lib/money";
 import { useFiguresHidden } from "@/components/FiguresToggle";
+import { SERIES_COLORS } from "@/lib/palette";
 
 const MASK = "****";
 const AXIS = { fill: "var(--text-muted)", fontSize: 11 };
@@ -222,6 +223,53 @@ export function CategoryBars({ data }: { data: Slice[] }) {
           />
         </Bar>
       </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+/* ------------------------------------------------ categories, a donut ------ */
+
+
+/**
+ * A month's spend split by category. Never more than six slices (top five plus
+ * Other), and always shipped beside a table of the same rows: a donut shows
+ * the split at a glance, the table carries the exact figures.
+ */
+export function CategoryDonut({ data, size = 200 }: { data: Slice[]; size?: number }) {
+  const router = useRouter();
+  const hidden = useFiguresHidden();
+  return (
+    <ResponsiveContainer width={size} height={size}>
+      <PieChart>
+        <Pie
+          data={data} dataKey="totalCents" nameKey="name"
+          innerRadius="58%" outerRadius="100%" paddingAngle={1} stroke="var(--surface-1)"
+          startAngle={90} endAngle={-270} isAnimationActive={false}
+          cursor={data.some((d) => d.href) ? "pointer" : undefined}
+          onClick={(entry: unknown) => {
+            const href = (entry as { payload?: Slice })?.payload?.href;
+            if (href) router.push(href);
+          }}
+        >
+          {data.map((d, i) => <Cell key={d.name} fill={SERIES_COLORS[i]} />)}
+        </Pie>
+        <Tooltip
+          content={({ active, payload }) => {
+            if (!active || !payload?.length) return null;
+            const d = payload[0].payload as Slice;
+            return (
+              <TooltipBox
+                title={d.name}
+                rows={[
+                  { label: "Spent", value: hidden ? MASK : formatCents(d.totalCents) },
+                  { label: "Share", value: `${Math.round(d.share * 100)}%` },
+                  { label: "Transactions", value: String(d.count) },
+                ]}
+              />
+            );
+          }}
+        />
+      </PieChart>
     </ResponsiveContainer>
   );
 }

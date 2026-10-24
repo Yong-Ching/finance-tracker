@@ -5,7 +5,9 @@ import {
   availableMonths, totals, byMonth, expenseByCategory, balanceSeries, accountCards, attention,
   subscriptionOverview, topMerchants,
 } from "@/lib/queries";
-import { BalanceLine } from "@/components/charts";
+import { BalanceLine, CategoryDonut } from "@/components/charts";
+import { SERIES_COLORS } from "@/lib/palette";
+import { MonthPicker } from "@/components/MonthPicker";
 import { PeriodPicker } from "@/components/PeriodPicker";
 import { QuickFind } from "@/components/DashboardLive";
 import { FiguresToggle } from "@/components/FiguresToggle";
@@ -22,9 +24,9 @@ const monthName = (ym: string) => `${MONTH[Number(ym.slice(5, 7)) - 1]} ${ym.sli
 export default async function Dashboard({
   searchParams,
 }: {
-  searchParams: Promise<{ period?: string }>;
+  searchParams: Promise<{ period?: string; month?: string }>;
 }) {
-  const { period: periodParam } = await searchParams;
+  const { period: periodParam, month: monthParam } = await searchParams;
   const months = availableMonths();
 
   if (!months.length) {
@@ -47,6 +49,13 @@ export default async function Dashboard({
   const monthly = byMonth(undefined, fx);
   const cats = expenseByCategory(period, undefined, 8, fx);
   const catTotal = cats.reduce((a, c) => a + c.totalCents, 0);
+  // One month's spend by category for the donut: the month asked for, else the
+  // month the period picker shows, else the latest.
+  const spendMonth = monthParam && months.includes(monthParam) ? monthParam
+    : months.includes(period.key) ? period.key : months[months.length - 1];
+  const spendPeriod = resolvePeriod(spendMonth, months);
+  const monthCats = expenseByCategory(spendPeriod, undefined, 5, fx);
+  const monthTotal = monthCats.reduce((a, c) => a + c.totalCents, 0);
   const accounts = accountCards(period);
   // What the accounts hold now (a card's balance owed counts against it). Only
   // accounts in the total's currency, unless a currency view converts the rest.
@@ -75,12 +84,11 @@ export default async function Dashboard({
     for (const [k, v] of Object.entries(params)) if (v) q.set(k, v);
     return `/transactions?${q}`;
   };
-  const sliceHref = (c: (typeof cats)[number]) =>
-    c.categoryId !== null
-      ? drill({ category: String(c.categoryId) })
-      : c.memberIds?.length
-        ? drill({ category: c.memberIds.join(",") })
-        : drill({ category: "none" });
+  const sliceHref = (c: (typeof cats)[number], within = period) => {
+    const q = new URLSearchParams({ from: within.from, to: within.to });
+    q.set("category", c.categoryId !== null ? String(c.categoryId) : c.memberIds?.length ? c.memberIds.join(",") : "none");
+    return `/transactions?${q}`;
+  };
 
   const inPeriod = (m: string) => m >= period.from.slice(0, 7) && m <= period.to.slice(0, 7);
   const looseEnds = [
@@ -184,6 +192,55 @@ export default async function Dashboard({
           )}
         </section>
       </div>
+
+      {/* One month's spend by category: the donut, and the table it rests on */}
+      <Card
+        title="Spending by category"
+        subtitle={converting(fx) ? `In ${cur} at the latest rate; click a slice or row to see it` : "Click a slice or row to see it"}
+        action={<MonthPicker months={months} value={spendMonth} label="Month for spending by category" />}
+      >
+        {monthCats.some((c) => c.totalCents > 0) ? (
+          <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-center">
+            <div className="relative shrink-0">
+              <CategoryDonut size={220}
+                data={monthCats.filter((c) => c.totalCents > 0).map((c) => ({ ...c, href: sliceHref(c, spendPeriod) }))}
+              />
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-[12px] text-[var(--text-muted)]">{monthName(spendMonth)}</span>
+                <span className="tnum text-[16px] font-semibold leading-tight"><Fig>{formatMoney(monthTotal, cur)}</Fig></span>
+              </div>
+            </div>
+            <table className="w-full text-[14px] sm:max-w-[520px]">
+              <thead>
+                <tr className="text-left text-[12px] text-[var(--text-muted)]">
+                  <th className="pb-1.5 font-medium">Category</th>
+                  <th className="pb-1.5 text-right font-medium">Spent</th>
+                  <th className="pb-1.5 text-right font-medium">Share</th>
+                </tr>
+              </thead>
+              <tbody>
+                {monthCats.map((c, i) => (
+                  <tr key={c.name} className="border-t border-[var(--border)]">
+                    <td className="py-1.5">
+                      <Link href={sliceHref(c, spendPeriod)} className="flex items-center gap-2 hover:underline">
+                        <span
+                          aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                          style={{ background: c.totalCents > 0 ? SERIES_COLORS[i] : "transparent" }}
+                        />
+                        {c.name}
+                      </Link>
+                    </td>
+                    <td className="tnum py-1.5 text-right"><Fig>{formatCents(c.totalCents)}</Fig></td>
+                    <td className="tnum py-1.5 text-right text-[var(--text-muted)]">{Math.round(c.share * 100)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <Empty>No spending in {monthName(spendMonth)}.</Empty>
+        )}
+      </Card>
 
       <div className="grid gap-3 lg:grid-cols-12">
         {/* Month by month */}

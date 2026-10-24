@@ -270,6 +270,10 @@ ringgit bill, pick its account.
 - **Balance** is what your accounts hold now, from each one's latest
   statement, with a credit card's amount owed taken off. It does not follow the
   period picker.
+- **Spending by category** is a donut of one month's spending (the five
+  biggest categories plus Other) beside a table of the same figures. It has
+  its own month picker; it starts on the month the period picker shows, or the
+  latest month. Click a slice or row to see its transactions.
 - **Review** shows Claude's suggestions, if you turned that on. Accepting a
   suggested rule also backfills it.
 

@@ -112,6 +112,7 @@ With no key, the layer reports itself as off and everything else is unaffected.
     src/lib/reconcile.ts    transfer matching and the pocket ledger
     src/lib/subscriptions.ts  matching, status and detection of recurring charges
     src/lib/queries.ts      every dashboard aggregation
+    src/lib/palette.ts      the six chart colours, in order (server and client)
     src/lib/ai/redact.ts    what may leave the machine, and what may not
     src/lib/ai/review.ts    the Claude call; proposals only, never writes
     src/lib/ai/persist.ts   the two gates, then stores proposals as pending
