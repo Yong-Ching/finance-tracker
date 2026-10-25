@@ -2,6 +2,20 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { formatCents, formatMoney } from "@/lib/money";
+import { Fig } from "@/components/Fig";
+
+interface PreviewRow {
+  txnDate: string;
+  descriptionRaw: string;
+  amountCents: number;
+  balanceAfterCents: number | null;
+  currencyOriginal: string | null;
+  amountOriginalCents: number | null;
+  category: string | null;
+  txnType: string;
+  already: boolean;
+}
 
 interface Outcome {
   status: string;
@@ -16,6 +30,12 @@ interface Outcome {
   warnings: string[];
   message?: string;
   error?: string;
+  preview?: {
+    currency: string;
+    openingBalanceCents: number | null;
+    closingBalanceCents: number | null;
+    rows: PreviewRow[];
+  };
   review?: {
     status: string;
     sentCount: number;
@@ -82,11 +102,17 @@ export function UploadButton() {
       {(preview || done) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={close}>
           <div
-            className="card w-full max-w-lg p-5"
+            className={`card flex max-h-[90vh] w-full flex-col p-5 ${preview?.preview?.rows.length ? "max-w-5xl" : "max-w-lg"}`}
             onClick={(e) => e.stopPropagation()}
           >
-            <Report o={(preview ?? done)!} filename={file?.name} />
-            <div className="mt-5 flex justify-end gap-2">
+            <div className="min-h-0 overflow-y-auto pr-3">
+              <Report o={(preview ?? done)!} filename={file?.name} />
+              {preview?.preview && preview.preview.rows.length > 0 && <Rows p={preview.preview} />}
+            </div>
+            <div className="mt-5 flex shrink-0 items-center justify-end gap-2">
+              {preview?.preview && (
+                <span className="mr-auto text-[12px] text-[var(--text-muted)]">Nothing is saved until you import.</span>
+              )}
               <button onClick={close} className="rounded px-3 py-1.5 text-[13px] hover:bg-[var(--surface-2)]">
                 {done ? "Close" : "Cancel"}
               </button>
@@ -96,7 +122,7 @@ export function UploadButton() {
                   disabled={busy}
                   className="rounded bg-[var(--text-primary)] px-3 py-1.5 text-[13px] font-medium text-[var(--surface-1)] disabled:opacity-50"
                 >
-                  {busy ? "Importing..." : `Import ${preview.inserted} transactions`}
+                  {busy ? "Importing..." : `Looks right, import ${preview.inserted} transactions`}
                 </button>
               )}
             </div>
@@ -184,6 +210,74 @@ function Report({ o, filename }: { o: Outcome; filename?: string }) {
         </ul>
       )}
     </>
+  );
+}
+
+/**
+ * Every row the statement produced, as it would be stored: the check before
+ * anything is written. Rows already in the ledger are shown but will be skipped.
+ */
+function Rows({ p }: { p: NonNullable<Outcome["preview"]> }) {
+  const sum = p.rows.reduce((a, r) => a + r.amountCents, 0);
+  const cur = p.currency;
+  return (
+    <div className="mt-5">
+      <div className="mb-2 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-[12px] text-[var(--text-muted)]">
+        <span className="text-[13px] font-semibold text-[var(--text-primary)]">What will be added</span>
+        <span>Check the dates, amounts and directions against the PDF. Money out is negative.</span>
+      </div>
+      <table className="w-full text-[13px]">
+        <thead className="sticky top-0 bg-[var(--surface-1)]">
+          <tr className="text-left text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
+            <th className="py-1.5 pr-3 font-medium">Date</th>
+            <th className="py-1.5 pr-3 font-medium">Description</th>
+            <th className="py-1.5 pr-3 font-medium">Category</th>
+            <th className="py-1.5 pr-3 text-right font-medium">Amount</th>
+            <th className="py-1.5 text-right font-medium">Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          {p.openingBalanceCents !== null && (
+            <tr className="border-t border-[var(--border)] text-[var(--text-muted)]">
+              <td className="py-1 pr-3" />
+              <td className="py-1 pr-3" colSpan={3}>Opening balance</td>
+              <td className="tnum py-1 text-right"><Fig>{formatCents(p.openingBalanceCents)}</Fig></td>
+            </tr>
+          )}
+          {p.rows.map((r, i) => (
+            <tr key={i} className={`border-t border-[var(--border)] align-top ${r.already ? "text-[var(--text-muted)]" : ""}`}>
+              <td className="tnum whitespace-nowrap py-1 pr-3">{r.txnDate}</td>
+              <td className="py-1 pr-3">
+                <span className="break-words">{r.descriptionRaw || <em className="text-[var(--text-muted)]">no description</em>}</span>
+                {r.already && <span className="ml-2 text-[11px]">already imported, skipped</span>}
+              </td>
+              <td className="py-1 pr-3">
+                {r.category ?? <span className="text-[var(--text-muted)]">needs a category</span>}
+              </td>
+              <td className="tnum whitespace-nowrap py-1 pr-3 text-right">
+                <Fig>{formatCents(r.amountCents)}</Fig>
+                {r.currencyOriginal && r.amountOriginalCents !== null && (
+                  <div className="text-[11px] text-[var(--text-muted)]">
+                    <Fig>{r.currencyOriginal} {formatCents(r.amountOriginalCents)}</Fig>
+                  </div>
+                )}
+              </td>
+              <td className="tnum whitespace-nowrap py-1 text-right text-[var(--text-secondary)]">
+                {r.balanceAfterCents !== null ? <Fig>{formatCents(r.balanceAfterCents)}</Fig> : ""}
+              </td>
+            </tr>
+          ))}
+          <tr className="border-t-2 border-[var(--border-strong)] font-semibold">
+            <td className="py-1.5 pr-3" />
+            <td className="py-1.5 pr-3" colSpan={2}>{p.rows.length} rows, net</td>
+            <td className="tnum whitespace-nowrap py-1.5 pr-3 text-right"><Fig>{formatMoney(sum, cur)}</Fig></td>
+            <td className="tnum whitespace-nowrap py-1.5 text-right">
+              {p.closingBalanceCents !== null && <Fig>{formatCents(p.closingBalanceCents)}</Fig>}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   );
 }
 

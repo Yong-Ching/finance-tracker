@@ -172,9 +172,12 @@ The routine is the same every month: upload, categorise, reconcile.
 1. Download the statement PDF from your bank's website or app.
 2. Click **Upload statement** at the top right and choose the PDF.
 3. Read the preview before importing: which account it detected, the period,
-   how many transactions, and whether the balances **reconcile** (opening
-   balance + every transaction = closing balance).
-4. Click **Import**. Nothing is saved until you do.
+   whether the balances **reconcile** (opening balance + every transaction =
+   closing balance), and every transaction it read - date, description, the
+   category your rules give it, amount and running balance. Check them against
+   the PDF; money out is negative. Rows already imported from another statement
+   are shown greyed out and skipped.
+4. Click **Looks right, import**. Nothing is saved until you do.
 
 If the balances don't add up, the statement is **quarantined**: it is kept and
 shown on **Accounts**, but left out of every total, so the dashboard is never

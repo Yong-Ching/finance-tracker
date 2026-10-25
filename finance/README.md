@@ -107,6 +107,7 @@ With no key, the layer reports itself as off and everything else is unaffected.
                             columns survive - direction is read from the column
     src/lib/parsers/dbs.ts  the DBS statement parser; citibank.ts, youtrip.ts,
                             maybank.ts and tng.ts beside it
+    src/lib/parsers/generic.ts  a reader for any tabular statement (not yet used)
     src/lib/ingest.ts       hash-dedupe -> detect -> parse -> continuity -> insert
     src/lib/classify.ts     override -> rule -> uncategorized
     src/lib/reconcile.ts    transfer matching and the pocket ledger
@@ -122,6 +123,14 @@ With no key, the layer reports itself as off and everything else is unaffected.
 Adding a bank means one file in `src/lib/parsers/` and one line in its
 `index.ts`. `npm run probe -- <file.pdf>` dumps a PDF's positioned text, which
 is how you find a new statement's column geometry.
+
+`src/lib/parsers/generic.ts` is a reader that knows no bank: it finds the
+transaction table by its header row and takes each column's position from it,
+turning sideways pages upright first (`extractRows(data, { upright: true })`).
+It is not wired into uploads yet. `npx tsx scripts/generic-trial.ts <folder>`
+runs it against statements a bank parser already reads and reports how close it
+gets; `--verbose` prints the mismatched rows, which are real statement text, so
+keep that output local.
 
 ## Scripts
 

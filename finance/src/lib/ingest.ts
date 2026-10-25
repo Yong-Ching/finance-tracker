@@ -26,6 +26,13 @@ export interface IngestOutcome {
   periodTo?: string | null;
   warnings: string[];
   message?: string;
+  /** On a preview: every row as it would be stored, for the user to check first. */
+  preview?: {
+    currency: string;
+    openingBalanceCents: number | null;
+    closingBalanceCents: number | null;
+    rows: PreviewRow[];
+  };
   /** Present on a preview when the Claude review layer ran. */
   review?: {
     status: ReviewOutcome["status"];
@@ -36,6 +43,20 @@ export interface IngestOutcome {
     flags: number;
     error?: string;
   };
+}
+
+export interface PreviewRow {
+  txnDate: string;
+  descriptionRaw: string;
+  amountCents: number;
+  balanceAfterCents: number | null;
+  /** Its original currency, when the statement printed a foreign amount. */
+  currencyOriginal: string | null;
+  amountOriginalCents: number | null;
+  category: string | null;
+  txnType: string;
+  /** Already in the ledger (from an earlier statement): it will be skipped. */
+  already: boolean;
 }
 
 const STATEMENT_DIR = path.join(DATA_DIR, "statements");
@@ -180,6 +201,25 @@ export async function ingestPdf(
       };
     }
 
+    const names = new Map(db.select({ id: schema.categories.id, name: schema.categories.name }).from(schema.categories).all()
+      .map((c) => [c.id, c.name]));
+    const preview: IngestOutcome["preview"] = {
+      currency: account.currency,
+      openingBalanceCents: result.openingBalanceCents,
+      closingBalanceCents: result.closingBalanceCents,
+      rows: classified.map(({ txn: t, already: isDup, c }) => ({
+        txnDate: t.txnDate,
+        descriptionRaw: t.descriptionRaw,
+        amountCents: t.amountCents,
+        balanceAfterCents: t.balanceAfterCents ?? null,
+        currencyOriginal: t.currencyOriginal && t.currencyOriginal !== account.currency ? t.currencyOriginal : null,
+        amountOriginalCents: t.amountOriginalCents ?? null,
+        category: c.categoryId !== null ? names.get(c.categoryId) ?? null : null,
+        txnType: c.txnType,
+        already: isDup,
+      })),
+    };
+
     return {
       ...empty,
       status,
@@ -193,6 +233,7 @@ export async function ingestPdf(
       periodTo: result.periodTo,
       warnings: result.warnings,
       review,
+      preview,
     };
   }
 
