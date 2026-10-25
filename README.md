@@ -12,16 +12,8 @@ your statements, refuses any statement whose balances do not reconcile,
 categorises transactions by rules you write (it never guesses), and shows the
 result on a dashboard. Everything runs on your own machine; nothing is uploaded.
 
-It is built around Singapore accounts (amounts in SGD), with Malaysian ones
-alongside, and currently reads:
-
-| Statement                         | Currency | What it covers                              |
-| --------------------------------- | -------- | ------------------------------------------- |
-| DBS bank account (PDF)            | SGD      | your main account: income, spending         |
-| Citibank credit card eStatement   | SGD      | what was bought on the card                 |
-| YouTrip SGD statement             | SGD      | what was spent from the travel wallet       |
-| Maybank savings account           | MYR      | your Malaysian account                      |
-| Touch 'n Go eWallet history       | MYR      | what was spent from the e-wallet (any range of months in one PDF) |
+Accounts can be in more than one currency: SGD is the base, and accounts in
+other currencies (such as MYR) are kept alongside.
 
 The currency picker in the top bar chooses how money is shown:
 
@@ -35,8 +27,8 @@ The currency picker in the top bar chooses how money is shown:
   Nothing stored changes - switching back shows the exact original amounts.
   Statements, Reconcile and Review always show original amounts.
 
-Maybank and Touch 'n Go send password-protected PDFs; the app
-cannot open those yet, so save an unprotected copy first and upload that.
+Some banks send password-protected PDFs; the app cannot open those yet, so
+save an unprotected copy first and upload that.
 
 ```
 finance/    the app: Next.js + SQLite
@@ -225,8 +217,8 @@ Each month the review queue gets shorter as your rules grow.
 
 ### 4. Reconcile transfers to your own accounts
 
-Moving money from DBS to your Citibank card or YouTrip wallet, or from Maybank
-to your Touch 'n Go wallet, is **not spending**; the spending is whatever that
+Moving money from your bank account to your own credit card or e-wallet is
+**not spending**; the spending is whatever that
 money bought, which only the card's or wallet's own statement shows. Until
 that statement is uploaded, the money is shown as **Unaccounted** on the
 dashboard (in its own currency for a ringgit wallet).
@@ -240,7 +232,7 @@ dashboard (in its own currency for a ringgit wallet).
 
 **Subscriptions** shows what you pay on repeat, and what that adds up to per
 month and per year. A subscription is kept in its account's currency: one on
-Maybank or Touch 'n Go is shown in RM and totalled on its own, never added to
+a ringgit account is shown in RM and totalled on its own, never added to
 the S$ figure. **Any SGD account** matches across your SGD accounts; for a
 ringgit bill, pick its account.
 
@@ -311,8 +303,8 @@ you only need `git pull` and, if dependencies changed, `npm install`.
 | Problem                                    | Fix                                                                 |
 | ------------------------------------------ | ------------------------------------------------------------------- |
 | Upload says **Unknown account**            | Run `npm run db:seed` in `finance/`.                                |
-| Upload says **No parser recognised this document** | It isn't one of the five supported statement formats. |
-| Upload fails on a Maybank or Touch 'n Go PDF | It is password-protected, which the app cannot open yet. Upload an unprotected copy. |
+| Upload says **No parser recognised this document** | The app cannot read this statement's layout yet. |
+| Upload fails on a password-protected PDF   | The app cannot open those yet. Upload an unprotected copy.          |
 | Port 3000 is already in use                | `npm run dev -- -p 3001`, then open http://127.0.0.1:3001           |
 | Desktop app shows an error while starting  | The window shows the output; **Develop → Show Server Log** has all of it. |
 
@@ -321,7 +313,7 @@ you only need `git pull` and, if dependencies changed, `npm install`.
 ## Changing the code
 
 [finance/README.md](finance/README.md) explains how the app works and where
-things live. Adding a new bank means one parser file in `src/lib/parsers/`.
+things live.
 
 To publish a new version of the installable app, run
 `npm run release -- patch` (or `minor`, `major`) in `desktop/`. It bumps the
