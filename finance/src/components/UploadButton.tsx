@@ -17,8 +17,14 @@ interface PreviewRow {
   already: boolean;
 }
 
+interface NewAccount { name: string; kind: string; currency: string }
+/** Where a generically read statement goes: an existing account, or a new one. */
+type Target = { accountId: number } | { newAccount: NewAccount };
+
 interface Outcome {
   status: string;
+  importable?: boolean;
+  accounts?: Array<{ id: number; name: string; currency: string; kind: string }>;
   accountName?: string;
   parser?: string;
   inserted: number;
@@ -53,12 +59,15 @@ export function UploadButton() {
   const [preview, setPreview] = useState<Outcome | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [done, setDone] = useState<Outcome | null>(null);
+  const [target, setTarget] = useState<Target | null>(null);
   const router = useRouter();
 
-  async function send(f: File, dryRun: boolean): Promise<Outcome> {
+  async function send(f: File, dryRun: boolean, to: Target | null = target): Promise<Outcome> {
     const body = new FormData();
     body.append("file", f);
     body.append("dryRun", String(dryRun));
+    if (to && "accountId" in to) body.append("accountId", String(to.accountId));
+    if (to && "newAccount" in to) body.append("newAccount", JSON.stringify(to.newAccount));
     const res = await fetch("/api/upload", { method: "POST", body });
     return res.json();
   }
@@ -69,9 +78,10 @@ export function UploadButton() {
     setBusy(true);
     setDone(null);
     setFile(f);
+    setTarget(null);
     // Parse, check against what is already stored, and run the review - all
     // before anything is written. Nothing is committed until the user confirms.
-    setPreview(await send(f, true));
+    setPreview(await send(f, true, null));
     setBusy(false);
     e.target.value = "";
   }
@@ -86,7 +96,18 @@ export function UploadButton() {
     router.refresh();
   }
 
-  const close = () => { setPreview(null); setFile(null); setDone(null); };
+  /** Re-reads the statement against the chosen account: its duplicates and rules. */
+  async function choose(to: Target) {
+    if (!file) return;
+    setBusy(true);
+    setTarget(to);
+    setPreview(await send(file, true, to));
+    setBusy(false);
+  }
+
+  const close = () => { setPreview(null); setFile(null); setDone(null); setTarget(null); };
+  const canImport = !!preview && !preview.error && preview.importable !== false &&
+    !["duplicate", "unrecognised", "needs_account"].includes(preview.status);
 
   return (
     <>
@@ -107,6 +128,9 @@ export function UploadButton() {
           >
             <div className="min-h-0 overflow-y-auto pr-3">
               <Report o={(preview ?? done)!} filename={file?.name} />
+              {preview?.accounts && preview.importable !== false && (
+                <AccountPicker accounts={preview.accounts} target={target} busy={busy} onChoose={choose} />
+              )}
               {preview?.preview && preview.preview.rows.length > 0 && <Rows p={preview.preview} />}
             </div>
             <div className="mt-5 flex shrink-0 items-center justify-end gap-2">
@@ -116,7 +140,7 @@ export function UploadButton() {
               <button onClick={close} className="rounded px-3 py-1.5 text-[13px] hover:bg-[var(--surface-2)]">
                 {done ? "Close" : "Cancel"}
               </button>
-              {preview && !preview.error && preview.status !== "duplicate" && preview.status !== "unrecognised" && (
+              {canImport && preview && (
                 <button
                   onClick={confirm}
                   disabled={busy}
@@ -149,6 +173,10 @@ function Report({ o, filename }: { o: Outcome; filename?: string }) {
       <h2 className="text-[15px] font-semibold">
         {o.status === "duplicate"
           ? "Already imported"
+          : o.status === "needs_account"
+            ? "Statement read, but whose is it?"
+            : o.importable === false
+              ? "Could not check this statement"
           : o.status === "unrecognised"
             ? "Unrecognised statement"
             : bad
@@ -277,6 +305,70 @@ function Rows({ p }: { p: NonNullable<Outcome["preview"]> }) {
           </tr>
         </tbody>
       </table>
+    </div>
+  );
+}
+
+const KINDS: Array<[string, string]> = [["bank", "Bank account"], ["credit_card", "Credit card"], ["prepaid", "Prepaid card or e-wallet"]];
+
+/**
+ * The generic reader cannot tell whose statement it is, so the user says: one of
+ * their accounts, or a new one, created only when the import commits.
+ */
+function AccountPicker({ accounts, target, busy, onChoose }: {
+  accounts: NonNullable<Outcome["accounts"]>;
+  target: Target | null;
+  busy: boolean;
+  onChoose: (t: Target) => void;
+}) {
+  const [pick, setPick] = useState<string>(
+    target && "accountId" in target ? String(target.accountId) : target ? "new" : "",
+  );
+  const [draft, setDraft] = useState<NewAccount>(
+    target && "newAccount" in target ? target.newAccount : { name: "", kind: "bank", currency: "SGD" },
+  );
+  const field = "rounded border border-[var(--border)] bg-[var(--surface-1)] px-2 py-1 text-[13px]";
+  return (
+    <div className="mt-4 rounded border border-[var(--border-strong)] p-3">
+      <div className="text-[13px] font-semibold">Which account is this?</div>
+      <p className="mt-0.5 text-[12px] text-[var(--text-muted)]">
+        No bank-specific parser knows this statement, so it was read from its table layout. Check every row below.
+      </p>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <select
+          className={field} value={pick} aria-label="Account" disabled={busy}
+          onChange={(e) => {
+            setPick(e.target.value);
+            if (e.target.value && e.target.value !== "new") onChoose({ accountId: Number(e.target.value) });
+          }}
+        >
+          <option value="" disabled>Choose an account</option>
+          {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
+          <option value="new">New account...</option>
+        </select>
+        {pick === "new" && (
+          <>
+            <input
+              className={`${field} w-40`} placeholder="Name, e.g. ACME Bank" aria-label="New account name"
+              value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+            />
+            <select className={field} aria-label="Account type" value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value })}>
+              {KINDS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+            </select>
+            <input
+              className={`${field} w-16 uppercase`} maxLength={3} aria-label="Currency" title="Three-letter currency code"
+              value={draft.currency} onChange={(e) => setDraft({ ...draft, currency: e.target.value.toUpperCase() })}
+            />
+            <button
+              disabled={busy || !draft.name.trim() || !/^[A-Z]{3}$/.test(draft.currency)}
+              onClick={() => onChoose({ newAccount: { ...draft, name: draft.name.trim() } })}
+              className="rounded border border-[var(--border-strong)] px-2.5 py-1 text-[13px] hover:bg-[var(--surface-2)] disabled:opacity-50"
+            >
+              Use this account
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }

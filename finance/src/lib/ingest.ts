@@ -1,10 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
-import { eq, inArray } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "@/db/schema";
 import { extractRows, rowsToText } from "./parsers/pdf";
 import { detectParsers, ParseError, type StatementResult } from "./parsers";
+import { parseGeneric } from "./parsers/generic";
 import { classify, byPriority } from "./classify";
 import { dedupeHash, fileHash } from "./dedupe";
 import { runReview, linkReviewToStatement, reviewEnabled } from "./ai/persist";
@@ -13,8 +14,26 @@ import type { ReviewOutcome } from "./ai/review";
 
 type Db = BetterSQLite3Database<typeof schema>;
 
+/** A new account to create with the statement, for one no account matches yet. */
+export interface NewAccount {
+  name: string;
+  kind: schema.AccountKind;
+  currency: string;
+}
+
+/** The generic reader, used when no bank-specific parser understands a statement. */
+const GENERIC = { name: "generic", version: "0.1.0" };
+
 export interface IngestOutcome {
-  status: "imported" | "quarantined" | "duplicate" | "unrecognised";
+  /** `needs_account`: read by the generic reader, which cannot tell whose statement it is. */
+  status: "imported" | "quarantined" | "duplicate" | "unrecognised" | "needs_account";
+  /**
+   * False when the statement must not be imported as it stands: a generic read
+   * is only trusted when its balances were found and reconcile.
+   */
+  importable?: boolean;
+  /** The accounts to choose from when the status is `needs_account`. */
+  accounts?: Array<{ id: number; name: string; currency: string; kind: string }>;
   statementId?: number;
   accountName?: string;
   parser?: string;
@@ -72,7 +91,7 @@ const STATEMENT_DIR = path.join(DATA_DIR, "statements");
 export async function ingestPdf(
   db: Db,
   file: { buffer: Uint8Array; filename: string },
-  opts: { accountId?: number; dryRun?: boolean; review?: boolean } = {},
+  opts: { accountId?: number; newAccount?: NewAccount; dryRun?: boolean; review?: boolean } = {},
 ): Promise<IngestOutcome> {
   const empty = { inserted: 0, skippedExisting: 0, needsReview: 0, continuityDelta: 0, warnings: [] };
 
@@ -93,44 +112,85 @@ export async function ingestPdf(
 
   const rows = await extractRows(file.buffer);
   const detections = detectParsers(rowsToText(rows));
-  if (!detections.length) {
-    return { ...empty, status: "unrecognised", message: "No parser recognised this document." };
-  }
 
-  const { parser, confidence } = detections[0];
-  let result: StatementResult;
-  try {
-    result = parser.parse(rows);
-  } catch (err) {
-    return {
-      ...empty,
-      status: "unrecognised",
-      parser: parser.name,
-      message: err instanceof ParseError ? err.message : String(err),
-    };
+  // A bank-specific parser first; the generic reader when none understands it.
+  let parser: { name: string; version: string } = GENERIC;
+  let confidence = 0;
+  let result: StatementResult | null = null;
+  let failure = "No parser recognised this document.";
+  if (detections.length) {
+    const top = detections[0];
+    parser = top.parser;
+    confidence = top.confidence;
+    try {
+      result = top.parser.parse(rows);
+    } catch (err) {
+      failure = err instanceof ParseError ? err.message : String(err);
+    }
   }
-
-  // --- account -------------------------------------------------------------
-  const account = opts.accountId
-    ? db.select().from(schema.accounts).where(eq(schema.accounts.id, opts.accountId)).get()
-    : db.select().from(schema.accounts).where(eq(schema.accounts.name, result.accountHint)).get();
-  if (!account) {
-    return { ...empty, status: "unrecognised", message: `Unknown account: ${result.accountHint}` };
+  if (!result) {
+    const tried = parser.name;
+    try {
+      result = parseGeneric(await extractRows(file.buffer, { upright: true }));
+      parser = GENERIC;
+      confidence = 0;
+      if (detections.length) result.warnings.unshift(`the ${tried} parser could not read it (${failure}); read generically`);
+    } catch (err) {
+      return {
+        ...empty,
+        status: "unrecognised",
+        parser: detections.length ? tried : undefined,
+        message: `${failure} The generic reader could not read it either: ${err instanceof ParseError ? err.message : String(err)}`,
+      };
+    }
   }
+  const generic = parser === GENERIC;
 
   // --- continuity: the hard gate -------------------------------------------
   const sum = result.transactions.reduce((a, t) => a + t.amountCents, 0);
-  const continuityDelta =
-    result.openingBalanceCents !== null && result.closingBalanceCents !== null
-      ? result.openingBalanceCents + sum - result.closingBalanceCents
-      : 0;
+  const balanced = result.openingBalanceCents !== null && result.closingBalanceCents !== null;
+  const continuityDelta = balanced ? result.openingBalanceCents! + sum - result.closingBalanceCents! : 0;
   const status: "imported" | "quarantined" = continuityDelta === 0 ? "imported" : "quarantined";
+  // A bank parser's misread is quarantined; a generic one is not imported at all.
+  const importable = !generic || (balanced && continuityDelta === 0);
+  const notImportable = !balanced
+    ? "The generic reader found no opening or closing balance, so the rows cannot be checked. Not imported."
+    : `The generic reader's rows do not reconcile (off by ${continuityDelta} cents), so they are probably misread. Not imported.`;
+
+  // --- account -------------------------------------------------------------
+  const accountList = () => db.select().from(schema.accounts).orderBy(schema.accounts.sortOrder).all()
+    .map((a) => ({ id: a.id, name: a.name, currency: a.currency, kind: a.kind }));
+  let account: schema.Account | undefined;
+  if (opts.newAccount) {
+    const n = opts.newAccount;
+    const name = n.name.trim();
+    if (!name) return { ...empty, status: "needs_account", accounts: accountList(), message: "Give the new account a name." };
+    if (!schema.ACCOUNT_KINDS.includes(n.kind) || !/^[A-Z]{3}$/.test(n.currency)) {
+      return { ...empty, status: "needs_account", accounts: accountList(), message: "Choose the account's type and a three-letter currency." };
+    }
+    if (db.select().from(schema.accounts).where(eq(schema.accounts.name, name)).get()) {
+      return { ...empty, status: "needs_account", accounts: accountList(), message: `An account called ${name} already exists; choose it instead.` };
+    }
+    // Not stored until the import commits; id 0 matches no existing row or rule.
+    account = {
+      id: 0, name, institution: name, kind: n.kind, currency: n.currency,
+      isPocket: n.kind === "credit_card" || n.kind === "prepaid", active: true, sortOrder: 0,
+    };
+  } else if (opts.accountId) {
+    account = db.select().from(schema.accounts).where(eq(schema.accounts.id, opts.accountId)).get();
+  } else if (!generic) {
+    account = db.select().from(schema.accounts).where(eq(schema.accounts.name, result.accountHint)).get();
+    if (!account) return { ...empty, status: "unrecognised", message: `Unknown account: ${result.accountHint}` };
+  }
+  const forAccount = account ?? {
+    id: 0, name: "", institution: "", kind: "bank" as const, currency: "", isPocket: false, active: true, sortOrder: 0,
+  };
 
   // --- classify ------------------------------------------------------------
   const rules = byPriority(db.select().from(schema.rules).all());
   const hashes = result.transactions.map((t) =>
     dedupeHash({
-      accountId: account.id,
+      accountId: forAccount.id,
       txnDate: t.txnDate,
       amountCents: t.amountCents,
       descriptionRaw: t.descriptionRaw,
@@ -159,7 +219,7 @@ export async function ingestPdf(
     hash: hashes[i],
     already: already.has(hashes[i]),
     c: classify(
-      { accountId: account.id, txnDate: t.txnDate, amountCents: t.amountCents, descriptionRaw: t.descriptionRaw },
+      { accountId: forAccount.id, txnDate: t.txnDate, amountCents: t.amountCents, descriptionRaw: t.descriptionRaw },
       rules,
       overrides.get(hashes[i]),
     ),
@@ -168,12 +228,21 @@ export async function ingestPdf(
   const newRows = classified.filter((r) => !r.already);
   const previewNeedsReview = newRows.filter((r) => !r.c.isReviewed).length;
 
-  if (opts.dryRun) {
+  // Never written: a generic read with nowhere to go, or one that does not check out.
+  if (!opts.dryRun && (!account || !importable)) {
+    return {
+      ...empty, status: "unrecognised", importable: false, parser: `${parser.name}@${parser.version}`,
+      message: !account ? "Choose the account this statement belongs to first." : notImportable,
+    };
+  }
+
+  if (opts.dryRun || !account) {
     let review: IngestOutcome["review"];
 
     // The review runs here - before anything is written - and only ever sees
     // rows that are new to the database AND that no local rule could place.
-    if (opts.review && reviewEnabled() && status === "imported") {
+    // A new account (id 0) is not stored yet, so it has no review to attach.
+    if (opts.dryRun && account && account.id !== 0 && importable && opts.review && reviewEnabled() && status === "imported") {
       const candidates = newRows
         .filter((r) => !r.c.isReviewed)
         .map((r) => ({
@@ -204,7 +273,7 @@ export async function ingestPdf(
     const names = new Map(db.select({ id: schema.categories.id, name: schema.categories.name }).from(schema.categories).all()
       .map((c) => [c.id, c.name]));
     const preview: IngestOutcome["preview"] = {
-      currency: account.currency,
+      currency: forAccount.currency,
       openingBalanceCents: result.openingBalanceCents,
       closingBalanceCents: result.closingBalanceCents,
       rows: classified.map(({ txn: t, already: isDup, c }) => ({
@@ -212,7 +281,7 @@ export async function ingestPdf(
         descriptionRaw: t.descriptionRaw,
         amountCents: t.amountCents,
         balanceAfterCents: t.balanceAfterCents ?? null,
-        currencyOriginal: t.currencyOriginal && t.currencyOriginal !== account.currency ? t.currencyOriginal : null,
+        currencyOriginal: t.currencyOriginal && t.currencyOriginal !== forAccount.currency ? t.currencyOriginal : null,
         amountOriginalCents: t.amountOriginalCents ?? null,
         category: c.categoryId !== null ? names.get(c.categoryId) ?? null : null,
         txnType: c.txnType,
@@ -222,9 +291,12 @@ export async function ingestPdf(
 
     return {
       ...empty,
-      status,
-      accountName: account.name,
-      parser: `${parser.name}@${parser.version} (${Math.round(confidence * 100)}%)`,
+      status: account ? status : "needs_account",
+      importable,
+      accounts: account && !generic ? undefined : accountList(),
+      message: !importable ? notImportable : !account ? "Read by the generic reader. Choose the account it belongs to." : undefined,
+      accountName: account?.name,
+      parser: generic ? `${parser.name}@${parser.version} (no bank-specific parser)` : `${parser.name}@${parser.version} (${Math.round(confidence * 100)}%)`,
       inserted: newRows.length,
       skippedExisting: classified.length - newRows.length,
       needsReview: previewNeedsReview,
@@ -238,17 +310,25 @@ export async function ingestPdf(
   }
 
   // --- insert --------------------------------------------------------------
+  let target: schema.Account = account;
   let statementId = 0;
   let inserted = 0;
   let skippedExisting = 0;
   let needsReview = 0;
 
   db.transaction(() => {
-    const stored = storeFile(file, account.name, sha256);
+    if (target.id === 0) {
+      const last = db.select({ n: schema.accounts.sortOrder }).from(schema.accounts).orderBy(desc(schema.accounts.sortOrder)).get();
+      const { name, institution, kind, currency, isPocket } = target;
+      target = db.insert(schema.accounts)
+        .values({ name, institution, kind, currency, isPocket, sortOrder: (last?.n ?? 0) + 1 })
+        .returning().get();
+    }
+    const stored = storeFile(file, target.name, sha256);
     const stmt = db
       .insert(schema.statements)
       .values({
-        accountId: account.id,
+        accountId: target.id,
         filename: file.filename,
         sha256,
         storedPath: stored,
@@ -270,7 +350,7 @@ export async function ingestPdf(
       db.insert(schema.transactions)
         .values({
           statementId,
-          accountId: account.id,
+          accountId: target.id,
           txnDate: t.txnDate,
           postDate: t.postDate ?? null,
           descriptionRaw: t.descriptionRaw,
@@ -299,7 +379,7 @@ export async function ingestPdf(
   return {
     status,
     statementId,
-    accountName: account.name,
+    accountName: target.name,
     parser: `${parser.name}@${parser.version}`,
     inserted,
     skippedExisting,

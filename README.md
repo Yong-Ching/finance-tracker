@@ -179,6 +179,14 @@ The routine is the same every month: upload, categorise, reconcile.
    are shown greyed out and skipped.
 4. Click **Looks right, import**. Nothing is saved until you do.
 
+A statement from a bank the app has no parser for is read from its table
+layout instead: it finds the header row (Date, Description, Debit/Credit or
+Amount, Balance) and reads the rows under it. The preview then asks **which
+account it is**: pick one, or create a new one (name, type and currency). Such a
+statement is only imported when the reader found its opening and closing
+balances and they reconcile; otherwise nothing is saved. Check its rows against
+the PDF with extra care.
+
 If the balances don't add up, the statement is **quarantined**: it is kept and
 shown on **Accounts**, but left out of every total, so the dashboard is never
 quietly wrong. Uploading the same file twice does nothing.
@@ -306,7 +314,8 @@ you only need `git pull` and, if dependencies changed, `npm install`.
 | Problem                                    | Fix                                                                 |
 | ------------------------------------------ | ------------------------------------------------------------------- |
 | Upload says **Unknown account**            | Run `npm run db:seed` in `finance/`.                                |
-| Upload says **No parser recognised this document** | The app cannot read this statement's layout yet. |
+| Upload says **No parser recognised this document** | Neither a bank parser nor the generic reader could find a transaction table. Scanned (image-only) PDFs cannot be read. |
+| Upload says **Could not check this statement** | The generic reader read rows but found no opening/closing balance, or they don't add up, so nothing was saved. |
 | Upload fails on a password-protected PDF   | The app cannot open those yet. Upload an unprotected copy.          |
 | Port 3000 is already in use                | `npm run dev -- -p 3001`, then open http://127.0.0.1:3001           |
 | Desktop app shows an error while starting  | The window shows the output; **Develop → Show Server Log** has all of it. |

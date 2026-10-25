@@ -107,7 +107,7 @@ With no key, the layer reports itself as off and everything else is unaffected.
                             columns survive - direction is read from the column
     src/lib/parsers/dbs.ts  the DBS statement parser; citibank.ts, youtrip.ts,
                             maybank.ts and tng.ts beside it
-    src/lib/parsers/generic.ts  a reader for any tabular statement (not yet used)
+    src/lib/parsers/generic.ts  a reader for any tabular statement; the upload fallback
     src/lib/ingest.ts       hash-dedupe -> detect -> parse -> continuity -> insert
     src/lib/classify.ts     override -> rule -> uncategorized
     src/lib/reconcile.ts    transfer matching and the pocket ledger
@@ -127,7 +127,11 @@ is how you find a new statement's column geometry.
 `src/lib/parsers/generic.ts` is a reader that knows no bank: it finds the
 transaction table by its header row and takes each column's position from it,
 turning sideways pages upright first (`extractRows(data, { upright: true })`).
-It is not wired into uploads yet. `npx tsx scripts/generic-trial.ts <folder>`
+Uploads fall back to it when no bank parser recognises a statement (or the one
+that does fails): the preview returns `needs_account` with the account list, the
+upload is repeated with `accountId` or `newAccount` (`{"name","kind","currency"}`,
+created only when the import commits), and a generic read is refused outright
+unless both balances were found and reconcile. `npx tsx scripts/generic-trial.ts <folder>`
 runs it against statements a bank parser already reads and reports how close it
 gets; `--verbose` prints the mismatched rows, which are real statement text, so
 keep that output local.
