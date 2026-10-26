@@ -12,9 +12,13 @@ export const FX_COOKIE = "currency";
 const SOURCE = "https://api.frankfurter.dev/v1/latest";
 const STALE_SECONDS = 12 * 60 * 60;
 
+/** Every currency an account or an investment is held in. */
 function heldCurrencies(): string[] {
-  const rows = db.selectDistinct({ c: s.accounts.currency }).from(s.accounts).all().map((r) => r.c);
-  return [BASE_CURRENCY, ...rows.filter((c) => c !== BASE_CURRENCY).sort()];
+  const rows = [
+    ...db.selectDistinct({ c: s.accounts.currency }).from(s.accounts).all().map((r) => r.c),
+    ...db.selectDistinct({ c: s.holdings.currency }).from(s.holdings).all().map((r) => r.c),
+  ];
+  return [BASE_CURRENCY, ...[...new Set(rows)].filter((c) => c !== BASE_CURRENCY).sort()];
 }
 
 function cached() {
@@ -47,30 +51,23 @@ async function refresh(currencies: string[]): Promise<void> {
   }
 }
 
-/**
- * The view the user picked, with the rates to show it. Rates are fetched only
- * when a currency view is chosen and the cached ones are missing or more than
- * twelve hours old; with none to be had, the view falls back to original.
- */
-export async function loadFx(): Promise<Fx> {
-  const wanted = (await cookies()).get(FX_COOKIE)?.value ?? ORIGINAL;
-  const currencies = heldCurrencies();
-  const mode = currencies.includes(wanted) ? wanted : ORIGINAL;
-
+/** Cached rates for these currencies, fetched first if any is missing or stale. */
+async function ratesFor(currencies: string[]) {
   let rows = cached();
-  if (mode !== ORIGINAL) {
-    const now = Date.now() / 1000;
-    const stale = currencies.some((c) => {
-      if (c === BASE_CURRENCY) return false;
-      const r = rows.find((x) => x.currency === c);
-      return !r || now - r.fetchedAt > STALE_SECONDS;
-    });
-    if (stale) {
-      await refresh(currencies);
-      rows = cached();
-    }
+  const now = Date.now() / 1000;
+  const stale = currencies.some((c) => {
+    if (c === BASE_CURRENCY) return false;
+    const r = rows.find((x) => x.currency === c);
+    return !r || now - r.fetchedAt > STALE_SECONDS;
+  });
+  if (stale) {
+    await refresh(currencies);
+    rows = cached();
   }
+  return rows;
+}
 
+function build(mode: string, rows: ReturnType<typeof cached>, currencies: string[]): Fx {
   const perBase: Record<string, number> = { [BASE_CURRENCY]: 1 };
   for (const r of rows) perBase[r.currency] = r.perBase;
   const complete = currencies.every((c) => perBase[c]);
@@ -80,4 +77,29 @@ export async function loadFx(): Promise<Fx> {
     return { mode: ORIGINAL, perBase, asOf, currencies, unavailable: mode };
   }
   return { mode, perBase, asOf, currencies };
+}
+
+/**
+ * The view the user picked, with the rates to show it. Rates are fetched only
+ * when a currency view is chosen and the cached ones are missing or more than
+ * twelve hours old; with none to be had, the view falls back to original.
+ */
+export async function loadFx(): Promise<Fx> {
+  const wanted = (await cookies()).get(FX_COOKIE)?.value ?? ORIGINAL;
+  const currencies = heldCurrencies();
+  const mode = currencies.includes(wanted) ? wanted : ORIGINAL;
+  return build(mode, mode === ORIGINAL ? cached() : await ratesFor(currencies), currencies);
+}
+
+/**
+ * A portfolio split only means something in one currency, so it always
+ * converts: into the chosen view's currency, or SGD in the original view. When
+ * a rate cannot be had the result is not converting, and the caller keeps
+ * currencies apart.
+ */
+export async function loadPortfolioFx(): Promise<Fx> {
+  const fx = await loadFx();
+  if (fx.mode !== ORIGINAL) return fx;
+  const mode = fx.unavailable ?? BASE_CURRENCY;
+  return build(mode, await ratesFor(fx.currencies), fx.currencies);
 }

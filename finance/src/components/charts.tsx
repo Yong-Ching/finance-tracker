@@ -235,7 +235,9 @@ export function CategoryBars({ data }: { data: Slice[] }) {
  * Other), and always shipped beside a table of the same rows: a donut shows
  * the split at a glance, the table carries the exact figures.
  */
-export function CategoryDonut({ data, size = 200 }: { data: Slice[]; size?: number }) {
+export function CategoryDonut({
+  data, size = 200, valueLabel = "Spent", countLabel = "Transactions",
+}: { data: Slice[]; size?: number; valueLabel?: string; countLabel?: string }) {
   const router = useRouter();
   const hidden = useFiguresHidden();
   return (
@@ -261,9 +263,9 @@ export function CategoryDonut({ data, size = 200 }: { data: Slice[]; size?: numb
               <TooltipBox
                 title={d.name}
                 rows={[
-                  { label: "Spent", value: hidden ? MASK : formatCents(d.totalCents) },
+                  { label: valueLabel, value: hidden ? MASK : formatCents(d.totalCents) },
                   { label: "Share", value: `${Math.round(d.share * 100)}%` },
-                  { label: "Transactions", value: String(d.count) },
+                  { label: countLabel, value: String(d.count) },
                 ]}
               />
             );

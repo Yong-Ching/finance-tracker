@@ -112,7 +112,7 @@ With no key, the layer reports itself as off and everything else is unaffected.
     src/lib/classify.ts     override -> rule -> uncategorized
     src/lib/reconcile.ts    transfer matching and the pocket ledger
     src/lib/subscriptions.ts  matching, status and detection of recurring charges
-    src/lib/queries.ts      every dashboard aggregation
+    src/lib/queries.ts      every dashboard aggregation, and the portfolio split
     src/lib/palette.ts      the six chart colours, in order (server and client)
     src/lib/ai/redact.ts    what may leave the machine, and what may not
     src/lib/ai/review.ts    the Claude call; proposals only, never writes
@@ -159,7 +159,11 @@ the wallet anyway, so moves to and from GO+ show as transfers.
 In the original view totals are in SGD; an account in another currency
 (Maybank, in ringgit) is shown on its own, in its own currency. A currency view
 converts everything at the latest rate for show. Subscriptions are matched and
-detected within each account's own currency either way. Password-
+detected within each account's own currency either way. The Investments page
+is the exception: a portfolio split only means something in one currency, so
+it always converts, into SGD in the original view (`loadPortfolioFx`). Its
+holdings are entered by hand (`holdings` table) and never touch the ledger.
+Password-
 protected PDFs have to be unlocked before uploading.
 
 ## MCP: sorting with an assistant
@@ -167,7 +171,7 @@ protected PDFs have to be unlocked before uploading.
 `src/mcp/` exposes the data as an MCP server, so any assistant that runs local
 MCP servers (Claude Desktop and Code, Codex, Cursor, Windsurf, VS Code, Gemini
 CLI, LM Studio...) can read transactions and file them in bulk. Tools: `list_accounts`,
-`list_categories`, `list_rules`, `find_transactions`, `group_transactions`
+`list_categories`, `list_holdings`, `list_rules`, `find_transactions`, `group_transactions`
 (uncategorised rows by merchant, with every id), `summarize`, `categorize`,
 `set_remark`, `create_category`, `create_rule`. There is no delete.
 

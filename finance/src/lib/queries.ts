@@ -909,3 +909,92 @@ export function topMerchants(p: Period, n = 3): string[] {
     .filter((k) => listTransactions({ q: k, from: p.from, to: p.to, perPage: 1 }).total > 0)
     .slice(0, n);
 }
+
+/* -------------------------------------------------------------- holdings */
+
+export interface PortfolioSlice {
+  name: string; totalCents: number; count: number; share: number;
+}
+
+export interface Portfolio {
+  holdings: s.Holding[];
+  /** The currency the split and total are in; null when no rate could be had. */
+  currency: string | null;
+  totalCents: number;
+  /** Total cost of the holdings whose cost is known, and their value. */
+  costCents: number;
+  costedValueCents: number;
+  bySource: PortfolioSlice[];
+  byClass: PortfolioSlice[];
+  /** Without a rate, each currency's total on its own. */
+  perCurrency: CurrencySum[];
+  oldestAsOf: string | null;
+}
+
+/** Largest first, folded to `cap` slices plus Other so the donut never exceeds six. */
+function slices(groups: Map<string, { cents: number; count: number }>, total: number, cap = 5): PortfolioSlice[] {
+  const all = [...groups].map(([name, g]) => ({ name, totalCents: g.cents, count: g.count }))
+    .sort((a, b) => b.totalCents - a.totalCents);
+  const top = all.length > cap + 1 ? all.slice(0, cap) : all;
+  const rest = all.slice(top.length);
+  if (rest.length) {
+    top.push({
+      name: "Other",
+      totalCents: rest.reduce((a, r) => a + r.totalCents, 0),
+      count: rest.reduce((a, r) => a + r.count, 0),
+    });
+  }
+  return top.map((r) => ({ ...r, share: total ? r.totalCents / total : 0 }));
+}
+
+/**
+ * The investments, split by where they are held and by asset class. The split
+ * converts every holding into one currency (`fx` must be converting for that);
+ * without a rate there is no meaningful split, only per-currency totals.
+ */
+export function portfolio(fx?: Fx): Portfolio {
+  const holdings = db.select().from(s.holdings).orderBy(asc(s.holdings.source), desc(s.holdings.valueCents)).all();
+
+  const perCurrencyMap = new Map<string, CurrencySum>();
+  for (const h of holdings) {
+    const c = perCurrencyMap.get(h.currency) ?? { currency: h.currency, cents: 0 };
+    c.cents += h.valueCents;
+    perCurrencyMap.set(h.currency, c);
+  }
+  const oldestAsOf = holdings.map((h) => h.asOf).sort()[0] ?? null;
+  const perCurrency = [...perCurrencyMap.values()];
+
+  if (!converting(fx)) {
+    return {
+      holdings, currency: null, totalCents: 0, costCents: 0, costedValueCents: 0,
+      bySource: [], byClass: [], perCurrency, oldestAsOf,
+    };
+  }
+
+  const value = (h: s.Holding) => Math.round(h.valueCents * factor(h.currency, fx));
+  const bySource = new Map<string, { cents: number; count: number }>();
+  const byClass = new Map<string, { cents: number; count: number }>();
+  let total = 0, cost = 0, costedValue = 0;
+  for (const h of holdings) {
+    const v = value(h);
+    total += v;
+    if (h.costCents != null) {
+      cost += Math.round(h.costCents * factor(h.currency, fx));
+      costedValue += v;
+    }
+    for (const [map, key] of [[bySource, h.source], [byClass, h.assetClass]] as const) {
+      const g = map.get(key) ?? { cents: 0, count: 0 };
+      g.cents += v; g.count++;
+      map.set(key, g);
+    }
+  }
+  return {
+    holdings, currency: fx.mode, totalCents: total, costCents: cost, costedValueCents: costedValue,
+    bySource: slices(bySource, total), byClass: slices(byClass, total), perCurrency, oldestAsOf,
+  };
+}
+
+/** Sources already in use, for the add form's suggestions. */
+export function holdingSources(): string[] {
+  return db.selectDistinct({ v: s.holdings.source }).from(s.holdings).orderBy(asc(s.holdings.source)).all().map((r) => r.v);
+}

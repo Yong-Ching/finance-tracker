@@ -73,7 +73,7 @@ describe("the MCP server", () => {
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual([
       "categorize", "create_category", "create_rule", "find_transactions", "group_transactions",
-      "list_accounts", "list_categories", "list_rules", "set_remark", "summarize",
+      "list_accounts", "list_categories", "list_holdings", "list_rules", "set_remark", "summarize",
     ]);
     expect(tools.find((t) => t.name === "find_transactions")!.annotations?.readOnlyHint).toBe(true);
     expect(tools.find((t) => t.name === "categorize")!.annotations?.readOnlyHint).toBe(false);

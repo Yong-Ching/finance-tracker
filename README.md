@@ -280,6 +280,23 @@ ringgit bill, pick its account.
 - **Review** shows Claude's suggestions, if you turned that on. Accepting a
   suggested rule also backfills it.
 
+### 7. Keep track of your investments
+
+The **Investments** page holds what you own outside your bank accounts: shares
+at a broker, funds, gold, crypto. No statement feeds it; you enter each holding
+by hand and update its value when you check.
+
+1. Under **Add a holding**, give its **source** (where it is held - each broker
+   or platform, or "Gold"), its name, an asset class, its currency, what it is
+   worth now and, if you like, what you paid. Holdings with the same source
+   are grouped together.
+2. Two donuts show the split **by source** and **by asset class**, each beside
+   a table of the same figures. Holdings in other currencies are converted at
+   the latest exchange rate for the split and the total, marked "≈"; each
+   holding is still listed in its own currency.
+3. **Edit** a holding to update its value; the date moves to today. Gain on
+   cost covers only the holdings you gave a cost.
+
 ---
 
 ## Your data

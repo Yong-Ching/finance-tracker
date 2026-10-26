@@ -423,3 +423,36 @@ export const fxRates = sqliteTable("fx_rates", {
   asOf: text("as_of").notNull(),
   fetchedAt: integer("fetched_at").notNull().default(now),
 });
+
+/* -------------------------------------------------------------- holdings */
+
+export const ASSET_CLASSES = ["stocks", "bonds", "funds", "gold", "crypto", "cash", "other"] as const;
+export type AssetClass = (typeof ASSET_CLASSES)[number];
+
+/**
+ * An investment, entered by hand: no statement feeds these. `source` is where
+ * it is held (a broker, a bank, a vault) and is free text, so a new platform
+ * needs no code. `valueCents` is what it is worth as of `asOf`, in its own
+ * currency, and is overwritten when the user updates it.
+ */
+export const holdings = sqliteTable(
+  "holdings",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    source: text("source").notNull(),
+    assetClass: text("asset_class").$type<AssetClass>().notNull().default("other"),
+    currency: text("currency").notNull().default("SGD"),
+    /** Current market value, positive. */
+    valueCents: integer("value_cents").notNull(),
+    /** What was paid in, if known; null = not tracked. */
+    costCents: integer("cost_cents"),
+    asOf: text("as_of").notNull(), // ISO yyyy-mm-dd
+    note: text("note"),
+    createdAt: integer("created_at").notNull().default(now),
+    updatedAt: integer("updated_at").notNull().default(now),
+  },
+  (t) => [index("holdings_source_idx").on(t.source)],
+);
+
+export type Holding = typeof holdings.$inferSelect;

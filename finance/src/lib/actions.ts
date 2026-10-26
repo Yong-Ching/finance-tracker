@@ -5,7 +5,7 @@ import { and, desc, eq, isNull, like, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
 import * as s from "@/db/schema";
-import { TXN_TYPES, MATCH_TYPES, SUBSCRIPTION_CADENCES } from "@/db/schema";
+import { TXN_TYPES, MATCH_TYPES, SUBSCRIPTION_CADENCES, ASSET_CLASSES } from "@/db/schema";
 import type { TxnType, MatchType } from "@/db/schema";
 
 /*
@@ -56,7 +56,7 @@ const ruleInput = z.object({
  */
 const refresh = () => {
   try {
-    for (const p of ["/", "/transactions", "/rules", "/reconcile", "/review", "/accounts", "/subscriptions"]) {
+    for (const p of ["/", "/transactions", "/rules", "/reconcile", "/review", "/accounts", "/subscriptions", "/investments"]) {
       revalidatePath(p);
     }
   } catch {
@@ -607,4 +607,35 @@ export async function quickSearch(raw: string, rawFrom?: string, rawTo?: string)
     })),
     href: `/transactions?${params}`,
   };
+}
+
+/* --------------------------------------------------------------- holdings */
+
+const holdingInput = z.object({
+  name: z.string().trim().min(1).max(100),
+  source: z.string().trim().min(1).max(60),
+  assetClass: z.enum(ASSET_CLASSES),
+  currency: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/),
+  valueCents: z.number().int().nonnegative().max(100_000_000_000),
+  costCents: z.number().int().nonnegative().max(100_000_000_000).nullable(),
+  asOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  note: z.string().max(500).nullable().optional(),
+});
+export type HoldingInput = z.infer<typeof holdingInput>;
+
+export async function createHolding(input: HoldingInput) {
+  const r = db.insert(s.holdings).values(holdingInput.parse(input)).returning({ id: s.holdings.id }).get();
+  refresh();
+  return r.id;
+}
+
+export async function updateHolding(rawId: number, input: Partial<HoldingInput>) {
+  const clean = holdingInput.partial().parse(input);
+  db.update(s.holdings).set({ ...clean, updatedAt: sql`(unixepoch())` }).where(eq(s.holdings.id, id.parse(rawId))).run();
+  refresh();
+}
+
+export async function deleteHolding(rawId: number) {
+  db.delete(s.holdings).where(eq(s.holdings.id, id.parse(rawId))).run();
+  refresh();
 }

@@ -139,6 +139,17 @@ export function createFinanceServer(): McpServer {
     annotations: read,
   }, guarded(() => json(queries.listRules())));
 
+  server.registerTool("list_holdings", {
+    title: "List investments",
+    description:
+      "The investments the user entered by hand on the Investments page: each holding's source (where it is held), " +
+      "asset class, currency, current value, cost if known and the date the value is as of. Each in its own currency, never converted.",
+    annotations: read,
+  }, guarded(() => json(queries.portfolio().holdings.map((h) => ({
+    id: h.id, name: h.name, source: h.source, asset_class: h.assetClass, currency: h.currency,
+    value: money(h.valueCents), cost: h.costCents == null ? null : money(h.costCents), as_of: h.asOf, note: h.note,
+  })))));
+
   server.registerTool("find_transactions", {
     title: "Find transactions",
     description: "Transactions matching the filters, newest first, with per-currency sums of everything matched.",
